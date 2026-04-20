@@ -1,0 +1,43 @@
+[user]
+	email = saeed.saedi.s@gmail.com
+	name = saeed saedi
+
+[core]
+	pager = delta
+	editor = nvim
+
+[interactive]
+	diffFilter = delta --color-only
+
+[delta]
+	navigate = true
+	side-by-side = true
+	line-numbers = true
+	syntax-theme = Catppuccin Mocha
+	file-style = bold yellow
+	file-decoration-style = bold yellow box
+	hunk-header-style = file line-number syntax
+	plus-style = syntax "#1e3a2a"
+	minus-style = syntax "#3a1e1e"
+
+[merge]
+	conflictstyle = diff3
+
+[diff]
+	colorMoved = default
+
+[pull]
+	rebase = false
+
+[init]
+	defaultBranch = main
+
+[alias]
+	lg  = log --oneline --graph --decorate --all
+	lga = log --all --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"
+	st  = status -sb
+	co  = checkout
+	br  = branch
+	ci  = commit
+	unstage = reset HEAD --
+	last    = log -1 HEAD

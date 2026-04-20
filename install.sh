@@ -1,0 +1,529 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  Dotfiles installer — macOS (Apple Silicon / Intel) + Ubuntu/Debian Linux
+#  Usage:  ./install.sh [--skip-fonts] [--skip-vscode] [--skip-nvim]
+# ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+# ── Flags ─────────────────────────────────────────────────────────────────────
+SKIP_FONTS=false
+SKIP_VSCODE=false
+SKIP_NVIM=false
+for arg in "$@"; do
+    case "$arg" in
+        --skip-fonts)  SKIP_FONTS=true  ;;
+        --skip-vscode) SKIP_VSCODE=true ;;
+        --skip-nvim)   SKIP_NVIM=true   ;;
+    esac
+done
+
+# ── Colors / helpers ──────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+
+log()     { echo -e "${GREEN}[✓]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
+err()     { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
+section() { echo -e "\n${BOLD}${BLUE}══════ $* ══════${NC}"; }
+ask()     { echo -e "${YELLOW}[?]${NC} $*"; }
+
+DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── OS detection ──────────────────────────────────────────────────────────────
+OS=""
+ARCH=$(uname -m)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    OS="macos"
+elif [[ -f /etc/os-release ]]; then
+    . /etc/os-release
+    OS="linux"
+    DISTRO="${ID:-unknown}"
+else
+    err "Unsupported OS. Only macOS and Linux are supported."
+fi
+
+section "Dotfiles installer  |  OS: $OS  |  Arch: $ARCH"
+echo "  Dotfiles: $DOTFILES"
+echo "  Home:     $HOME"
+echo ""
+
+# ── Backup helper ─────────────────────────────────────────────────────────────
+backup_existing() {
+    local target="$1"
+    if [[ -e "$target" && ! -L "$target" ]]; then
+        local bak="${target}.bak.$(date +%Y%m%d_%H%M%S)"
+        mv "$target" "$bak"
+        warn "Backed up: $target  →  $bak"
+    fi
+}
+
+symlink() {
+    local src="$1" dest="$2"
+    mkdir -p "$(dirname "$dest")"
+    backup_existing "$dest"
+    ln -sf "$src" "$dest"
+    log "Linked: $(basename "$dest")"
+}
+
+# ── Homebrew (macOS) ──────────────────────────────────────────────────────────
+install_homebrew() {
+    section "Homebrew"
+    if command -v brew &>/dev/null; then
+        log "Homebrew already installed — updating"
+        brew update --quiet
+    else
+        log "Installing Homebrew…"
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        # Add brew to PATH for rest of script
+        if [[ "$ARCH" == "arm64" ]]; then
+            eval "$(/opt/homebrew/bin/brew shellenv)"
+        else
+            eval "$(/usr/local/bin/brew shellenv)"
+        fi
+    fi
+}
+
+# ── macOS packages ────────────────────────────────────────────────────────────
+install_packages_macos() {
+    section "macOS packages (Homebrew)"
+
+    local brews=(
+        neovim tmux git curl wget jq tree
+        fzf fd bat eza zoxide atuin
+        lazygit git-delta ripgrep
+        pyenv direnv
+        go node
+        gh pwgen
+        zsh-autosuggestions zsh-syntax-highlighting
+    )
+
+    for pkg in "${brews[@]}"; do
+        if brew list --formula "$pkg" &>/dev/null 2>&1; then
+            log "Already installed: $pkg"
+        else
+            log "Installing: $pkg"
+            brew install "$pkg"
+        fi
+    done
+}
+
+# ── Nerd Font (macOS) ─────────────────────────────────────────────────────────
+install_font_macos() {
+    $SKIP_FONTS && return
+    section "JetBrains Mono Nerd Font (macOS)"
+    if [[ -d "$HOME/Library/Fonts" ]] && ls "$HOME/Library/Fonts"/JetBrainsMonoNerd* &>/dev/null 2>&1; then
+        log "Font already installed"
+    else
+        log "Installing JetBrains Mono Nerd Font…"
+        brew install --cask font-jetbrains-mono-nerd-font
+    fi
+}
+
+# ── Ubuntu/Debian packages ────────────────────────────────────────────────────
+install_packages_linux() {
+    section "Linux packages (apt + extras)"
+
+    log "Updating apt…"
+    sudo apt-get update -qq
+
+    local apt_pkgs=(
+        git curl wget jq tree build-essential
+        tmux zsh
+        ripgrep fd-find
+        fzf
+        direnv
+        gh
+        pwgen
+        unzip
+        ca-certificates
+        software-properties-common
+        libssl-dev libffi-dev zlib1g-dev
+        libbz2-dev libreadline-dev libsqlite3-dev libncursesw5-dev
+        xz-utils tk-dev libxml2-dev libxmlsec1-dev liblzma-dev
+    )
+
+    sudo apt-get install -y "${apt_pkgs[@]}"
+
+    # Neovim — official binary release (always latest stable)
+    if ! command -v nvim &>/dev/null; then
+        log "Installing Neovim (binary release)…"
+        local nvim_arch
+        case "$ARCH" in
+            x86_64)  nvim_arch="x86_64" ;;
+            aarch64) nvim_arch="arm64"  ;;
+            *)       err "Unsupported arch: $ARCH" ;;
+        esac
+        local tmpdir
+        tmpdir=$(mktemp -d)
+        local tag
+        tag=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        curl -Lo "$tmpdir/nvim.tar.gz" \
+            "https://github.com/neovim/neovim/releases/download/${tag}/nvim-linux-${nvim_arch}.tar.gz"
+        tar -xzf "$tmpdir/nvim.tar.gz" -C "$tmpdir"
+        sudo install -Dm755 "$tmpdir/nvim-linux-${nvim_arch}/bin/nvim" /usr/local/bin/nvim
+        sudo cp -r "$tmpdir/nvim-linux-${nvim_arch}/share/nvim" /usr/local/share/
+        rm -rf "$tmpdir"
+        log "Neovim installed: $(nvim --version | head -1)"
+    else
+        log "Neovim already installed: $(nvim --version | head -1)"
+    fi
+
+    # Go
+    if ! command -v go &>/dev/null; then
+        log "Installing Go…"
+        local go_version="1.23.0"
+        local go_arch
+        case "$ARCH" in
+            x86_64)  go_arch="amd64" ;;
+            aarch64) go_arch="arm64" ;;
+        esac
+        local tmpdir; tmpdir=$(mktemp -d)
+        curl -Lo "$tmpdir/go.tar.gz" "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz"
+        sudo tar -C /usr/local -xzf "$tmpdir/go.tar.gz"
+        rm -rf "$tmpdir"
+        export PATH="$PATH:/usr/local/go/bin"
+    else
+        log "Go already installed: $(go version)"
+    fi
+
+    # Node.js via NodeSource
+    if ! command -v node &>/dev/null; then
+        log "Installing Node.js…"
+        curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+    else
+        log "Node.js already installed: $(node --version)"
+    fi
+
+    # bat (binary is called batcat on Ubuntu)
+    if ! command -v bat &>/dev/null && ! command -v batcat &>/dev/null; then
+        log "Installing bat…"
+        sudo apt-get install -y bat
+    fi
+    # Create bat alias if needed
+    if command -v batcat &>/dev/null && ! command -v bat &>/dev/null; then
+        mkdir -p "$HOME/.local/bin"
+        ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
+        log "Created bat → batcat symlink"
+    fi
+
+    # eza
+    if ! command -v eza &>/dev/null; then
+        log "Installing eza…"
+        sudo mkdir -p /etc/apt/keyrings
+        wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc \
+            | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+        echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
+            | sudo tee /etc/apt/sources.list.d/gierens.list >/dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y eza
+    else
+        log "eza already installed"
+    fi
+
+    # zoxide
+    if ! command -v zoxide &>/dev/null; then
+        log "Installing zoxide…"
+        curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
+    else
+        log "zoxide already installed"
+    fi
+
+    # atuin
+    if ! command -v atuin &>/dev/null; then
+        log "Installing atuin…"
+        bash <(curl --proto '=https' --tlsv1.2 -sSf https://setup.atuin.sh)
+    else
+        log "atuin already installed"
+    fi
+
+    # git-delta
+    if ! command -v delta &>/dev/null; then
+        log "Installing git-delta…"
+        local delta_ver="0.17.0"
+        local delta_arch
+        case "$ARCH" in
+            x86_64)  delta_arch="x86_64-unknown-linux-musl" ;;
+            aarch64) delta_arch="aarch64-unknown-linux-musl" ;;
+        esac
+        local tmpdir; tmpdir=$(mktemp -d)
+        curl -Lo "$tmpdir/delta.tar.gz" \
+            "https://github.com/dandavison/delta/releases/download/${delta_ver}/delta-${delta_ver}-${delta_arch}.tar.gz"
+        tar -xzf "$tmpdir/delta.tar.gz" -C "$tmpdir"
+        sudo install -Dm755 "$tmpdir/delta-${delta_ver}-${delta_arch}/delta" /usr/local/bin/delta
+        rm -rf "$tmpdir"
+    else
+        log "delta already installed"
+    fi
+
+    # lazygit
+    if ! command -v lazygit &>/dev/null; then
+        log "Installing lazygit…"
+        local lg_ver
+        lg_ver=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+        local lg_arch
+        case "$ARCH" in
+            x86_64)  lg_arch="x86_64" ;;
+            aarch64) lg_arch="arm64"  ;;
+        esac
+        local tmpdir; tmpdir=$(mktemp -d)
+        curl -Lo "$tmpdir/lazygit.tar.gz" \
+            "https://github.com/jesseduffield/lazygit/releases/download/v${lg_ver}/lazygit_${lg_ver}_Linux_${lg_arch}.tar.gz"
+        tar -xzf "$tmpdir/lazygit.tar.gz" -C "$tmpdir"
+        sudo install -Dm755 "$tmpdir/lazygit" /usr/local/bin/lazygit
+        rm -rf "$tmpdir"
+    else
+        log "lazygit already installed"
+    fi
+}
+
+# ── Nerd Font (Linux) ─────────────────────────────────────────────────────────
+install_font_linux() {
+    $SKIP_FONTS && return
+    section "JetBrains Mono Nerd Font (Linux)"
+    local font_dir="$HOME/.local/share/fonts"
+    if ls "$font_dir"/JetBrainsMonoNerd* &>/dev/null 2>&1; then
+        log "Font already installed"
+        return
+    fi
+    log "Downloading JetBrains Mono Nerd Font…"
+    mkdir -p "$font_dir"
+    local tmpdir; tmpdir=$(mktemp -d)
+    curl -Lo "$tmpdir/JetBrainsMono.zip" \
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip"
+    unzip -q "$tmpdir/JetBrainsMono.zip" -d "$font_dir"
+    fc-cache -fv "$font_dir" >/dev/null
+    rm -rf "$tmpdir"
+    log "Font installed — set your terminal to 'JetBrainsMonoNLNFM Regular'"
+}
+
+# ── pyenv ─────────────────────────────────────────────────────────────────────
+install_pyenv() {
+    section "pyenv"
+    if [[ -d "$HOME/.pyenv" ]]; then
+        log "pyenv already installed"
+        return
+    fi
+    log "Installing pyenv…"
+    curl -fsSL https://pyenv.run | bash
+}
+
+# ── Oh My Zsh ─────────────────────────────────────────────────────────────────
+install_ohmyzsh() {
+    section "Oh My Zsh"
+    if [[ -d "$HOME/.oh-my-zsh" ]]; then
+        log "Oh My Zsh already installed"
+        return
+    fi
+    log "Installing Oh My Zsh…"
+    RUNZSH=no CHSH=no \
+        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+}
+
+# ── zsh plugins (for Linux / manual install) ──────────────────────────────────
+install_zsh_plugins_custom() {
+    local custom="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins"
+
+    if [[ ! -d "$custom/zsh-autosuggestions" ]]; then
+        log "Installing zsh-autosuggestions…"
+        git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
+            "$custom/zsh-autosuggestions"
+    else
+        log "zsh-autosuggestions already present"
+    fi
+
+    if [[ ! -d "$custom/zsh-syntax-highlighting" ]]; then
+        log "Installing zsh-syntax-highlighting…"
+        git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting \
+            "$custom/zsh-syntax-highlighting"
+    else
+        log "zsh-syntax-highlighting already present"
+    fi
+}
+
+# ── Set default shell to zsh ──────────────────────────────────────────────────
+set_zsh_default() {
+    local zsh_path
+    zsh_path=$(command -v zsh)
+    if [[ "$SHELL" != "$zsh_path" ]]; then
+        log "Setting zsh as default shell…"
+        if ! grep -qx "$zsh_path" /etc/shells; then
+            echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+        fi
+        chsh -s "$zsh_path"
+    else
+        log "zsh is already the default shell"
+    fi
+}
+
+# ── Bat Catppuccin theme ──────────────────────────────────────────────────────
+install_bat_theme() {
+    section "bat Catppuccin Mocha theme"
+    local bat_cmd
+    bat_cmd=$(command -v bat 2>/dev/null || command -v batcat 2>/dev/null || true)
+    [[ -z "$bat_cmd" ]] && { warn "bat not found, skipping theme"; return; }
+
+    local theme_dir
+    theme_dir="$("$bat_cmd" --config-dir 2>/dev/null)/themes"
+    mkdir -p "$theme_dir"
+
+    if [[ -f "$theme_dir/Catppuccin Mocha.tmTheme" ]]; then
+        log "bat Catppuccin Mocha theme already installed"
+        return
+    fi
+
+    curl -Lo "$theme_dir/Catppuccin Mocha.tmTheme" \
+        "https://github.com/catppuccin/bat/releases/download/v0.2.3/Catppuccin%20Mocha.tmTheme"
+    "$bat_cmd" cache --build >/dev/null
+    log "bat theme installed"
+}
+
+# ── Deploy config symlinks ────────────────────────────────────────────────────
+deploy_configs() {
+    section "Deploying configs (symlinks)"
+
+    # zsh
+    symlink "$DOTFILES/configs/zsh/zshrc"       "$HOME/.zshrc"
+
+    # git
+    symlink "$DOTFILES/configs/git/gitconfig"   "$HOME/.gitconfig"
+
+    # tmux (XDG)
+    symlink "$DOTFILES/configs/tmux/tmux.conf"  "$HOME/.config/tmux/tmux.conf"
+
+    # neovim
+    backup_existing "$HOME/.config/nvim"
+    ln -sf "$DOTFILES/configs/nvim" "$HOME/.config/nvim"
+    log "Linked: nvim config dir"
+
+    # undodir used by neovim
+    mkdir -p "$HOME/.vim/undodir"
+}
+
+# ── TPM (tmux plugin manager) ─────────────────────────────────────────────────
+install_tpm() {
+    section "TPM — tmux plugin manager"
+    local tpm_dir="$HOME/.tmux/plugins/tpm"
+    if [[ -d "$tpm_dir" ]]; then
+        log "TPM already installed — pulling latest"
+        git -C "$tpm_dir" pull --quiet
+    else
+        log "Cloning TPM…"
+        git clone --depth=1 https://github.com/tmux-plugins/tpm "$tpm_dir"
+    fi
+
+    # Install plugins headlessly
+    if command -v tmux &>/dev/null; then
+        log "Installing tmux plugins headlessly…"
+        "$HOME/.tmux/plugins/tpm/bin/install_plugins" >/dev/null 2>&1 || true
+        log "Plugins installed (or already up to date)"
+    fi
+}
+
+# ── Neovim bootstrap ──────────────────────────────────────────────────────────
+bootstrap_nvim() {
+    $SKIP_NVIM && return
+    section "Neovim — bootstrapping lazy.nvim plugins"
+    if ! command -v nvim &>/dev/null; then
+        warn "nvim not found, skipping bootstrap"
+        return
+    fi
+    log "Running Lazy sync (first run may take a minute)…"
+    nvim --headless "+Lazy! sync" +qa 2>/dev/null || \
+        nvim --headless -c "lua require('lazy').sync()" -c "qa" 2>/dev/null || \
+        warn "Neovim bootstrap had warnings (normal on first run)"
+    log "Neovim plugins installed"
+}
+
+# ── VS Code extensions ────────────────────────────────────────────────────────
+install_vscode_extensions() {
+    $SKIP_VSCODE && return
+    section "VS Code extensions"
+
+    if ! command -v code &>/dev/null; then
+        warn "VS Code 'code' CLI not found — skipping extension install"
+        warn "Install VS Code and run:  code --install-extension <id>"
+        return
+    fi
+
+    local extensions_file="$DOTFILES/configs/vscode/extensions.txt"
+    local installed
+    installed=$(code --list-extensions 2>/dev/null)
+
+    while IFS= read -r ext; do
+        [[ -z "$ext" || "$ext" == \#* ]] && continue
+        if echo "$installed" | grep -qi "^${ext}$"; then
+            log "Already installed: $ext"
+        else
+            log "Installing: $ext"
+            code --install-extension "$ext" --force >/dev/null 2>&1 || \
+                warn "Failed to install: $ext"
+        fi
+    done < "$extensions_file"
+
+    # Deploy VS Code settings (default profile)
+    local vscode_settings_dir
+    if [[ "$OS" == "macos" ]]; then
+        vscode_settings_dir="$HOME/Library/Application Support/Code/User"
+    else
+        vscode_settings_dir="$HOME/.config/Code/User"
+    fi
+    mkdir -p "$vscode_settings_dir"
+    backup_existing "$vscode_settings_dir/settings.json"
+    cp "$DOTFILES/configs/vscode/settings.json" "$vscode_settings_dir/settings.json"
+    log "VS Code settings deployed"
+}
+
+# ── Final notes ───────────────────────────────────────────────────────────────
+print_summary() {
+    section "Done!"
+    echo ""
+    echo -e "  ${GREEN}What's installed:${NC}"
+    echo "  • Neovim + lazy.nvim (all plugins)"
+    echo "  • tmux + TPM plugins (One Dark Pro theme)"
+    echo "  • Zsh + Oh My Zsh + autosuggestions + syntax-highlighting"
+    echo "  • atuin (Ctrl+R history), zoxide (smart cd), eza, bat, lazygit"
+    echo "  • pyenv, direnv, git-delta, fzf, ripgrep, fd"
+    echo "  • VS Code extensions + settings"
+    echo ""
+    echo -e "  ${YELLOW}Manual steps remaining:${NC}"
+    echo "  1. Set your terminal font to:  JetBrainsMono Nerd Font Mono Regular"
+    echo "  2. Open a new terminal (or run: exec zsh)"
+    echo "  3. In Neovim, run :Lazy to verify plugins"
+    echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
+    if [[ "$OS" == "macos" ]]; then
+        echo "  5. For Claude Code CLI: npm install -g @anthropic-ai/claude-code"
+    fi
+    echo ""
+    echo -e "  ${BLUE}Git config:${NC}  review ~/.gitconfig — update name/email if needed"
+    echo ""
+}
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+main() {
+    if [[ "$OS" == "macos" ]]; then
+        install_homebrew
+        install_packages_macos
+        install_font_macos
+    else
+        install_packages_linux
+        install_font_linux
+    fi
+
+    install_pyenv
+    install_ohmyzsh
+
+    if [[ "$OS" == "linux" ]]; then
+        install_zsh_plugins_custom
+    fi
+
+    set_zsh_default
+    install_bat_theme
+    deploy_configs
+    install_tpm
+    bootstrap_nvim
+    install_vscode_extensions
+    print_summary
+}
+
+main "$@"

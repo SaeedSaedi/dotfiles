@@ -1,0 +1,199 @@
+# ════════════════════════════════════════════════════════════════════════════
+#  .zshrc — cross-platform (macOS + Linux)
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── OS detection & Homebrew ──────────────────────────────────────────────────
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    IS_MACOS=true
+    if [[ -f /opt/homebrew/bin/brew ]]; then        # Apple Silicon
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    elif [[ -f /usr/local/bin/brew ]]; then          # Intel
+        eval "$(/usr/local/bin/brew shellenv)"
+    fi
+    BREW_PREFIX="${HOMEBREW_PREFIX:-/opt/homebrew}"
+else
+    IS_MACOS=false
+    BREW_PREFIX=""
+    # Include user local bin (zoxide, atuin, etc. installed here on Linux)
+    export PATH="$HOME/.local/bin:$PATH"
+    export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+fi
+
+# ── Oh My Zsh ────────────────────────────────────────────────────────────────
+export ZSH="$HOME/.oh-my-zsh"
+ZSH_THEME="robbyrussell"
+
+# ── History ──────────────────────────────────────────────────────────────────
+HISTSIZE=100000
+SAVEHIST=100000
+HISTFILE=~/.zsh_history
+setopt HIST_IGNORE_ALL_DUPS HIST_FIND_NO_DUPS HIST_REDUCE_BLANKS
+setopt SHARE_HISTORY HIST_VERIFY
+
+# ── Completion ───────────────────────────────────────────────────────────────
+setopt AUTO_MENU COMPLETE_IN_WORD ALWAYS_TO_END
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+zstyle ':completion:*:descriptions' format '%F{yellow}-- %d --%f'
+
+# ── Plugins ──────────────────────────────────────────────────────────────────
+plugins=(
+    git
+    fzf
+    python
+    pip
+    virtualenv
+    docker
+    command-not-found
+)
+$IS_MACOS && plugins+=(macos)
+
+# FZF base path (must be set before OMZ sources fzf plugin)
+if [[ -n "$BREW_PREFIX" ]]; then
+    export FZF_BASE="$BREW_PREFIX/opt/fzf"
+fi
+
+source "$ZSH/oh-my-zsh.sh"
+
+# ── Editor ───────────────────────────────────────────────────────────────────
+export EDITOR='nvim'
+export VISUAL='nvim'
+
+# ── zsh-autosuggestions ──────────────────────────────────────────────────────
+if [[ -n "$BREW_PREFIX" && -f "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
+    source "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
+elif [[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
+    source "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
+fi
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+bindkey '^ ' autosuggest-accept    # Ctrl+Space accepts
+
+# ── zsh-syntax-highlighting (must be last sourced plugin) ────────────────────
+if [[ -n "$BREW_PREFIX" && -f "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
+    source "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+elif [[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
+    source "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
+fi
+
+# ── fzf ──────────────────────────────────────────────────────────────────────
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+export FZF_DEFAULT_OPTS='
+  --height 50% --layout=reverse --border rounded
+  --color=bg+:#313244,bg:#1e1e2e,spinner:#f5e0dc,hl:#f38ba8
+  --color=fg:#cdd6f4,header:#f38ba8,info:#cba6f7,pointer:#f5e0dc
+  --color=marker:#f5e0dc,fg+:#cdd6f4,prompt:#cba6f7,hl+:#f38ba8
+  --preview "bat --color=always --style=numbers --line-range=:50 {}"
+  --preview-window=right:50%:wrap
+'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_CTRL_T_OPTS='--preview "bat --color=always --style=numbers {}"'
+export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+export FZF_ALT_C_OPTS='--preview "eza --tree --level=2 --icons --color=always {}"'
+export FZF_CTRL_R_OPTS='--preview "" --no-preview'
+
+# ── bat ──────────────────────────────────────────────────────────────────────
+export BAT_THEME="Catppuccin Mocha"
+export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+export MANROFFOPT="-c"
+
+# ── zoxide (smart cd) ────────────────────────────────────────────────────────
+if command -v zoxide &>/dev/null; then
+    eval "$(zoxide init zsh --cmd cd)"
+fi
+
+# ── atuin (better history Ctrl+R) ────────────────────────────────────────────
+if command -v atuin &>/dev/null; then
+    eval "$(atuin init zsh --disable-up-arrow)"
+fi
+
+# ── eza (modern ls) ──────────────────────────────────────────────────────────
+alias ls='eza --icons --group-directories-first'
+alias la='eza -a --icons --group-directories-first'
+alias ll='eza -lah --icons --group-directories-first --git --time-style=relative'
+alias lt='eza --tree --icons --level=2 --group-directories-first'
+alias lta='eza --tree --icons --level=3 --all --ignore-glob=".git|node_modules|.venv"'
+
+# ── Navigation ───────────────────────────────────────────────────────────────
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias ~='cd ~'
+
+# ── Python dev ───────────────────────────────────────────────────────────────
+alias py='python3'
+alias venv='python3 -m venv .venv'
+alias va='source .venv/bin/activate'
+alias vd='deactivate'
+alias pipi='pip install'
+alias pipr='pip install -r requirements.txt'
+alias pipf='pip freeze > requirements.txt'
+
+# ── Git shortcuts ────────────────────────────────────────────────────────────
+alias gl='git log --oneline --graph --decorate --all'
+alias gla='git log --all --graph --pretty=format:"%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset"'
+alias lg='lazygit'
+alias gdt='git diff | delta'
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+alias cat='bat'
+alias vi='nvim'
+alias vim='nvim'
+alias reload='source ~/.zshrc && echo "zshrc reloaded"'
+alias zshconfig='$EDITOR ~/.zshrc'
+alias ip='curl -s ifconfig.me && echo'
+alias ports='lsof -i -P -n | grep LISTEN 2>/dev/null || netstat -tulanp 2>/dev/null'
+alias jqp='jq .'
+alias jql='jq -r .[]'
+
+# ── PATH ─────────────────────────────────────────────────────────────────────
+export PATH="$HOME/.local/bin:$PATH"
+
+# ── pyenv ────────────────────────────────────────────────────────────────────
+if [[ -d "$HOME/.pyenv" ]]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+    eval "$(pyenv init -)"
+fi
+
+# ── direnv ───────────────────────────────────────────────────────────────────
+if command -v direnv &>/dev/null; then
+    eval "$(direnv hook zsh)"
+fi
+
+# ── Proxy helpers (edit PROXY_HTTP/SOCKS to match your setup) ────────────────
+PROXY_HTTP="http://127.0.0.1:8118"
+PROXY_SOCKS="socks5://127.0.0.1:1080"
+
+enable_proxy() {
+    export HTTP_PROXY=$PROXY_HTTP HTTPS_PROXY=$PROXY_HTTP
+    export http_proxy=$PROXY_HTTP https_proxy=$PROXY_HTTP
+    export ALL_PROXY=$PROXY_SOCKS all_proxy=$PROXY_SOCKS
+    export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
+    git config --global http.proxy $PROXY_HTTP
+    git config --global https.proxy $PROXY_HTTP
+    command -v npm  &>/dev/null && npm  config set proxy $PROXY_HTTP && npm  config set https-proxy $PROXY_HTTP
+    command -v yarn &>/dev/null && yarn config set proxy $PROXY_HTTP && yarn config set https-proxy $PROXY_HTTP
+    command -v pip  &>/dev/null && pip  config set global.proxy $PROXY_HTTP 2>/dev/null
+    echo "Proxy enabled ($PROXY_HTTP)"
+}
+
+disable_proxy() {
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    git config --global --unset http.proxy  2>/dev/null || true
+    git config --global --unset https.proxy 2>/dev/null || true
+    command -v npm  &>/dev/null && npm  config delete proxy && npm  config delete https-proxy
+    command -v yarn &>/dev/null && yarn config delete proxy && yarn config delete https-proxy
+    command -v pip  &>/dev/null && pip  config unset global.proxy 2>/dev/null || true
+    echo "Proxy disabled"
+}
+
+# ── macOS-only extras ────────────────────────────────────────────────────────
+if $IS_MACOS; then
+    alias genpass='pwgen -n -c -C -B 16 8'
+    alias codep='code --proxy-server="http://127.0.0.1:8118"'
+fi
+
+# ── JetBrains VM options (macOS — optional) ──────────────────────────────────
+[[ -f "$HOME/.jetbrains.vmoptions.sh" ]] && source "$HOME/.jetbrains.vmoptions.sh"

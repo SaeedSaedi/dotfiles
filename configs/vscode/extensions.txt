@@ -1,0 +1,50 @@
+# ── Theme & Icons ──────────────────────────────────────────────────────────
+zhuangtongfa.material-theme
+PKief.material-icon-theme
+
+# ── Python ────────────────────────────────────────────────────────────────
+ms-python.python
+ms-python.pylance
+ms-python.black-formatter
+ms-python.debugpy
+
+# ── PHP / Laravel ─────────────────────────────────────────────────────────
+bmewburn.vscode-intelephense-client
+shufo.vscode-blade-formatter
+
+# ── Go ────────────────────────────────────────────────────────────────────
+golang.go
+
+# ── JavaScript / TypeScript ───────────────────────────────────────────────
+esbenp.prettier-vscode
+dbaeumer.vscode-eslint
+
+# ── Markup / Config ───────────────────────────────────────────────────────
+redhat.vscode-yaml
+ms-vscode.makefile-tools
+
+# ── Git ───────────────────────────────────────────────────────────────────
+eamodio.gitlens
+mhutchie.git-graph
+
+# ── Docker / Remote ───────────────────────────────────────────────────────
+ms-azuretools.vscode-docker
+ms-vscode-remote.remote-ssh
+ms-vscode-remote.remote-containers
+
+# ── GitHub ────────────────────────────────────────────────────────────────
+GitHub.copilot
+GitHub.copilot-chat
+github.vscode-github-actions
+
+# ── Productivity ──────────────────────────────────────────────────────────
+usernamehw.errorlens
+oderwat.indent-rainbow
+streetsidesoftware.code-spell-checker
+Gruntfuggly.todo-tree
+humao.rest-client
+formulahendry.auto-close-tag
+formulahendry.auto-rename-tag
+
+# ── Claude Code ───────────────────────────────────────────────────────────
+anthropic.claude-code
