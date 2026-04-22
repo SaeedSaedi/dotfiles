@@ -436,14 +436,35 @@ install_zsh_plugins_custom() {
 set_zsh_default() {
     local zsh_path
     zsh_path=$(command -v zsh)
+
+    # Register zsh in /etc/shells if missing (required by chsh)
+    if ! grep -qx "$zsh_path" /etc/shells; then
+        echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+    fi
+
     if [[ "$SHELL" != "$zsh_path" ]]; then
-        log "Setting zsh as default shell…"
-        if ! grep -qx "$zsh_path" /etc/shells; then
-            echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
+        log "Setting zsh as default login shell…"
+        if chsh -s "$zsh_path" 2>/dev/null; then
+            log "Done — open a new terminal window (not exec zsh) to start using zsh"
+        else
+            warn "chsh needs your password. Run manually: chsh -s $zsh_path"
         fi
-        chsh -s "$zsh_path"
     else
         log "zsh is already the default shell"
+    fi
+
+    # Fallback: make bash sessions auto-switch to zsh immediately.
+    # Covers the window between chsh and the next login, and cases where
+    # chsh fails. Only fires in interactive shells so scripts are unaffected.
+    local marker="# dotfiles: auto-switch to zsh"
+    if [[ -f "$HOME/.bashrc" ]] && ! grep -q "$marker" "$HOME/.bashrc"; then
+        cat >> "$HOME/.bashrc" << 'EOF'
+
+# dotfiles: auto-switch to zsh
+# Replaces the bash process with zsh in any interactive bash session.
+[[ $- == *i* && -z "$ZSH_VERSION" ]] && command -v zsh &>/dev/null && exec zsh
+EOF
+        log "Added zsh auto-switch to ~/.bashrc"
     fi
 }
 
@@ -591,6 +612,7 @@ install_vscode_extensions() {
     local extensions_file="$DOTFILES/configs/vscode/extensions.txt"
     local installed
     installed=$(code --list-extensions 2>/dev/null)
+    local -a failed=()
 
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" == \#* ]] && continue
@@ -598,20 +620,31 @@ install_vscode_extensions() {
             log "Already installed: $ext"
         else
             log "Installing: $ext"
-            local out attempt
+            local out attempt ok=false
             for attempt in 1 2; do
                 if out=$(code --install-extension "$ext" 2>&1); then
-                    break
+                    ok=true; break
                 elif [[ $attempt -eq 1 ]]; then
-                    warn "Retrying: $ext"
-                    sleep 3
-                else
-                    warn "Failed to install: $ext"
-                    warn "  └ $(echo "$out" | tail -1)"
+                    sleep 3   # brief pause before retry
                 fi
             done
+            $ok || failed+=("$ext")
         fi
     done < "$extensions_file"
+
+    # Print a single actionable summary for everything that failed
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        warn "${#failed[@]} extension(s) failed after retry:"
+        for ext in "${failed[@]}"; do
+            warn "  • $ext"
+        done
+        warn "Retry command:"
+        local retry_cmd="code"
+        for ext in "${failed[@]}"; do
+            retry_cmd+=" --install-extension $ext"
+        done
+        warn "  $retry_cmd"
+    fi
 
     local vscode_settings_dir
     if [[ "$OS" == "macos" ]]; then
