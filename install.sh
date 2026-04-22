@@ -195,6 +195,15 @@ install_packages_linux() {
         log "Node.js already installed: $(node --version)"
     fi
 
+    # Claude Code CLI
+    if ! command -v claude &>/dev/null; then
+        log "Installing Claude Code CLI…"
+        npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || \
+            warn "Claude Code install failed — run: npm install -g @anthropic-ai/claude-code"
+    else
+        log "Claude Code already installed: $(claude --version 2>/dev/null | head -1)"
+    fi
+
     # bat (binary is called batcat on Ubuntu)
     if ! command -v bat &>/dev/null && ! command -v batcat &>/dev/null; then
         log "Installing bat…"
@@ -398,6 +407,12 @@ deploy_configs() {
 
     # undodir used by neovim
     mkdir -p "$HOME/.vim/undodir"
+
+    # claude code
+    mkdir -p "$HOME/.claude"
+    symlink "$DOTFILES/configs/claude/settings.json"          "$HOME/.claude/settings.json"
+    symlink "$DOTFILES/configs/claude/statusline-command.sh"  "$HOME/.claude/statusline-command.sh"
+    chmod +x "$DOTFILES/configs/claude/statusline-command.sh"
 }
 
 # ── TPM (tmux plugin manager) ─────────────────────────────────────────────────
@@ -485,15 +500,14 @@ print_summary() {
     echo "  • atuin (Ctrl+R history), zoxide (smart cd), eza, bat, lazygit"
     echo "  • pyenv, direnv, git-delta, fzf, ripgrep, fd"
     echo "  • VS Code extensions + settings"
+    echo "  • Claude Code CLI + statusline config"
     echo ""
     echo -e "  ${YELLOW}Manual steps remaining:${NC}"
     echo "  1. Set your terminal font to:  JetBrainsMono Nerd Font Mono Regular"
     echo "  2. Open a new terminal (or run: exec zsh)"
     echo "  3. In Neovim, run :Lazy to verify plugins"
     echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
-    if [[ "$OS" == "macos" ]]; then
-        echo "  5. For Claude Code CLI: npm install -g @anthropic-ai/claude-code"
-    fi
+    echo "  5. Run 'claude' once to log in (claude auth login)"
     echo ""
     echo -e "  ${BLUE}Git config:${NC}  review ~/.gitconfig — update name/email if needed"
     echo ""
