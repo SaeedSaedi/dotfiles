@@ -14,8 +14,8 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 else
     IS_MACOS=false
     BREW_PREFIX=""
-    # Include user local bin (zoxide, atuin, etc. installed here on Linux)
-    export PATH="$HOME/.local/bin:$PATH"
+    # User-local bin: zoxide, atuin, claude, npm globals, etc.
+    export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
     export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
 fi
 

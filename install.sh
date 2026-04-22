@@ -63,7 +63,7 @@ fi
 # ── Extend PATH for the duration of this script ───────────────────────────────
 # Ensures already-installed tools in ~/.local/bin or /usr/local/go are detected
 # correctly by command -v checks, even before the shell profile is sourced.
-export PATH="$HOME/.local/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
 
 section "Dotfiles installer  |  OS: $OS  |  Arch: $ARCH"
 echo "  Dotfiles: $DOTFILES"
@@ -219,10 +219,21 @@ install_packages_linux() {
         log "Node.js already installed: $(node --version)"
     fi
 
+    # Ensure npm global installs go to ~/.local so no sudo is needed and the
+    # binaries land in ~/.local/bin which is already in PATH.
+    local npm_prefix
+    npm_prefix=$(npm config get prefix 2>/dev/null || true)
+    if [[ "$npm_prefix" != "$HOME/.local" ]]; then
+        npm config set prefix "$HOME/.local"
+        log "npm global prefix → ~/.local"
+    fi
+    # Make sure the newly configured prefix bin is in PATH for this session
+    export PATH="$HOME/.local/bin:$PATH"
+
     # ── Claude Code CLI ────────────────────────────────────────────────────────
     if ! command -v claude &>/dev/null; then
         log "Installing Claude Code CLI…"
-        npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || \
+        npm install -g @anthropic-ai/claude-code || \
             warn "Claude Code install failed — run: npm install -g @anthropic-ai/claude-code"
     else
         log "Claude Code already installed: $(claude --version 2>/dev/null | head -1)"
