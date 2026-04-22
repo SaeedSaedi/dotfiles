@@ -35,6 +35,7 @@ Pass one or more component names to install only those parts:
 | `pyenv`    | Install pyenv (Python version manager)                        |
 | `zsh`      | Oh My Zsh + plugins + set zsh as default shell                |
 | `bat`      | Install bat Catppuccin Mocha theme                            |
+| `kitty`    | Install Kitty terminal + deploy Catppuccin Mocha config       |
 | `tmux`     | TPM + headless plugin install                                 |
 | `nvim`     | Bootstrap Neovim lazy.nvim plugins                            |
 | `vscode`   | Install VS Code extensions + deploy settings                  |
@@ -96,6 +97,13 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - Language support: Python (black), PHP/Laravel (intelephense + blade), Go, JS/TS (prettier), YAML
 - Extensions: GitLens, Copilot, Claude Code, ErrorLens, indent-rainbow, REST Client, Todo Tree
 
+### Kitty Terminal
+- **Theme**: Catppuccin Mocha (matches Neovim + bat)
+- **Font**: JetBrains Mono Nerd Font with ligatures, 13pt
+- **Features**: GPU-accelerated, tab bar (powerline slanted), 0.96 background opacity
+- **Keybindings**: `Ctrl+Shift+T` new tab, `Ctrl+Shift+H/J/K/L` navigate splits, `Ctrl+Shift+Enter` new split
+- **Config**: `~/.config/kitty/kitty.conf` deployed via symlink
+
 ### Claude Code
 - **Statusline**: custom command-based statusline showing directory, git branch, model, context usage, token count, session cost, and rate limits
 - **Config**: `~/.claude/settings.json` + `~/.claude/statusline-command.sh` deployed via symlinks
@@ -109,6 +117,7 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 | `nvim`          | `~/.config/nvim`                    | `configs/nvim/`                              |
 | `tmux`          | `~/.config/tmux/tmux.conf`          | `configs/tmux/tmux.conf`                     |
 | `git`           | `~/.gitconfig`                      | `configs/git/gitconfig`                      |
+| `kitty`         | `~/.config/kitty/kitty.conf`        | `configs/kitty/kitty.conf`                   |
 | `claude`        | `~/.claude/settings.json`           | `configs/claude/settings.json`               |
 | `claude`        | `~/.claude/statusline-command.sh`   | `configs/claude/statusline-command.sh`       |
 | VS Code         | `*/Code/User/settings.json`         | copied (not symlinked)                       |

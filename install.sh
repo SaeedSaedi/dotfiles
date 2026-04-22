@@ -10,7 +10,7 @@
 #    ./install.sh nvim tmux
 #    ./install.sh vscode
 #
-#  Components: packages fonts pyenv zsh bat tmux nvim vscode claude configs
+#  Components: packages fonts pyenv zsh bat kitty tmux nvim vscode claude configs
 #
 #  Legacy skip flags (still work in full-install mode):
 #    --skip-fonts   --skip-vscode   --skip-nvim
@@ -111,7 +111,7 @@ install_packages_macos() {
     section "macOS packages (Homebrew)"
 
     local brews=(
-        neovim tmux git curl wget jq tree
+        neovim tmux kitty git curl wget jq tree
         fzf fd bat eza zoxide atuin
         lazygit git-delta ripgrep
         pyenv direnv
@@ -326,6 +326,29 @@ install_packages_linux() {
     fi
 }
 
+# ── Kitty terminal (Linux) ───────────────────────────────────────────────────
+install_kitty_linux() {
+    section "Kitty terminal"
+    # Kitty installs to ~/.local/kitty.app and symlinks into ~/.local/bin
+    if command -v kitty &>/dev/null; then
+        log "Kitty already installed: $(kitty --version 2>/dev/null | head -1)"
+        return
+    fi
+    log "Installing Kitty (official installer)…"
+    curl -L https://sw.kovidgoyal.net/kitty/installer.sh | sh /dev/stdin launch=n
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$HOME/.local/kitty.app/bin/kitty"  "$HOME/.local/bin/kitty"
+    ln -sf "$HOME/.local/kitty.app/bin/kitten" "$HOME/.local/bin/kitten"
+    # Desktop entry so it appears in app launcher
+    mkdir -p "$HOME/.local/share/applications"
+    cp "$HOME/.local/kitty.app/share/applications/kitty.desktop" \
+        "$HOME/.local/share/applications/" 2>/dev/null || true
+    sed -i \
+        "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" \
+        "$HOME/.local/share/applications/kitty.desktop" 2>/dev/null || true
+    log "Kitty installed — launch with: kitty"
+}
+
 # ── Nerd Font (Linux) ─────────────────────────────────────────────────────────
 install_font_linux() {
     $SKIP_FONTS && return
@@ -439,6 +462,8 @@ deploy_configs() {
     ln -sf "$DOTFILES/configs/nvim" "$HOME/.config/nvim"
     log "Linked: nvim config dir"
     mkdir -p "$HOME/.vim/undodir"
+
+    symlink "$DOTFILES/configs/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
 }
 
 # ── Deploy Claude Code config ─────────────────────────────────────────────────
@@ -532,11 +557,12 @@ print_summary() {
     echo "  • Zsh + Oh My Zsh + autosuggestions + syntax-highlighting"
     echo "  • atuin (Ctrl+R history), zoxide (smart cd), eza, bat, lazygit"
     echo "  • pyenv, direnv, git-delta, fzf, ripgrep, fd"
+    echo "  • Kitty terminal (Catppuccin Mocha)"
     echo "  • VS Code extensions + settings"
     echo "  • Claude Code CLI + statusline config"
     echo ""
     echo -e "  ${YELLOW}Manual steps remaining:${NC}"
-    echo "  1. Set your terminal font to:  JetBrainsMono Nerd Font Mono Regular"
+    echo "  1. Launch Kitty — font is auto-configured (JetBrainsMono Nerd Font)"
     echo "  2. Open a new terminal:  exec zsh"
     echo "  3. In Neovim, run :Lazy to verify plugins"
     echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
@@ -561,6 +587,11 @@ main() {
     # ── Fonts ─────────────────────────────────────────────────────────────────
     if want fonts; then
         [[ "$OS" == "macos" ]] && install_font_macos || install_font_linux
+    fi
+
+    # ── Kitty terminal ────────────────────────────────────────────────────────
+    if want kitty; then
+        [[ "$OS" == "linux" ]] && install_kitty_linux || log "Kitty: install via Homebrew (brew install --cask kitty)"
     fi
 
     # ── Zsh stack ─────────────────────────────────────────────────────────────
