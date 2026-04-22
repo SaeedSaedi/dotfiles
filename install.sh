@@ -113,7 +113,7 @@ install_packages_macos() {
     section "macOS packages (Homebrew)"
 
     local brews=(
-        neovim tmux kitty git curl wget jq tree
+        neovim tmux git curl wget jq tree
         fzf fd bat eza zoxide atuin
         lazygit git-delta ripgrep
         pyenv direnv
@@ -130,6 +130,14 @@ install_packages_macos() {
             brew install "$pkg"
         fi
     done
+
+    # Kitty is a GUI app — must be installed as a cask, not a formula
+    if brew list --cask kitty &>/dev/null 2>&1; then
+        log "Already installed: kitty"
+    else
+        log "Installing: kitty (cask)"
+        brew install --cask kitty
+    fi
 }
 
 # ── Nerd Font (macOS) ─────────────────────────────────────────────────────────
@@ -216,7 +224,11 @@ https://packages.microsoft.com/repos/code stable main" \
     # ── Go ────────────────────────────────────────────────────────────────────
     if ! command -v go &>/dev/null; then
         log "Installing Go…"
-        local go_version="1.23.0"
+        local go_version
+        go_version=$(curl -sSL 'https://go.dev/dl/?mode=json' \
+            | jq -r '[.[] | select(.stable==true)] | .[0].version' \
+            | sed 's/^go//')
+        go_version=${go_version:-1.23.0}
         local go_arch
         case "$ARCH" in
             x86_64)  go_arch="amd64" ;;
@@ -226,7 +238,7 @@ https://packages.microsoft.com/repos/code stable main" \
         curl -Lo "$tmpdir/go.tar.gz" "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz"
         sudo tar -C /usr/local -xzf "$tmpdir/go.tar.gz"
         rm -rf "$tmpdir"
-        log "Go installed"
+        log "Go ${go_version} installed"
     else
         log "Go already installed: $(go version)"
     fi
@@ -471,7 +483,11 @@ install_zsh_plugins_custom() {
 # ── Set default shell to zsh ──────────────────────────────────────────────────
 set_zsh_default() {
     local zsh_path
-    zsh_path=$(command -v zsh)
+    zsh_path=$(command -v zsh 2>/dev/null || true)
+    if [[ -z "$zsh_path" ]]; then
+        warn "zsh not found — skipping default shell setup"
+        return
+    fi
 
     # Clean up any exec-zsh auto-switch we may have added in a previous run —
     # Kitty handles the shell choice via kitty.conf (shell .), so the bashrc
@@ -528,14 +544,18 @@ PATHBLOCK
 )
 
     for rc in "$HOME/.profile" "$HOME/.bashrc"; do
-        # Remove existing block (idempotent re-runs)
+        local tmp; tmp=$(mktemp)
+        # Remove existing block (idempotent re-runs), then strip trailing blank lines
         if grep -q "$begin" "$rc" 2>/dev/null; then
-            # Use temp file for portability
-            local tmp; tmp=$(mktemp)
-            awk "/$begin/{found=1} !found{print} /$end/{found=0}" "$rc" > "$tmp"
-            mv "$tmp" "$rc"
+            awk "/$begin/{found=1} !found{print} /$end/{found=0}" "$rc" \
+                | awk 'NF{last=NR} {lines[NR]=$0} END{for(i=1;i<=last;i++) print lines[i]}' \
+                > "$tmp"
+        elif [[ -f "$rc" ]]; then
+            awk 'NF{last=NR} {lines[NR]=$0} END{for(i=1;i<=last;i++) print lines[i]}' \
+                "$rc" > "$tmp"
         fi
-        printf '\n%s\n' "$block" >> "$rc"
+        printf '\n%s\n' "$block" >> "$tmp"
+        mv "$tmp" "$rc"
         log "PATH block written to $rc"
     done
 }
@@ -738,7 +758,18 @@ main() {
 
     # ── Kitty terminal ────────────────────────────────────────────────────────
     if want kitty; then
-        [[ "$OS" == "linux" ]] && install_kitty_linux || log "Kitty: install via Homebrew (brew install --cask kitty)"
+        if [[ "$OS" == "linux" ]]; then
+            install_kitty_linux
+        else
+            # macOS: install cask if not present, then symlink config
+            if brew list --cask kitty &>/dev/null 2>&1; then
+                log "Kitty already installed (macOS cask)"
+            else
+                log "Installing Kitty (macOS cask)…"
+                brew install --cask kitty
+            fi
+            symlink "$DOTFILES/configs/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
+        fi
     fi
 
     # ── PATH setup (Linux — writes ~/.profile + ~/.bashrc) ───────────────────
