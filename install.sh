@@ -366,6 +366,7 @@ install_kitty_linux() {
     # Kitty installs to ~/.local/kitty.app and symlinks into ~/.local/bin
     if command -v kitty &>/dev/null; then
         log "Kitty already installed: $(kitty --version 2>/dev/null | head -1)"
+        _set_kitty_default_linux
         return
     fi
     log "Installing Kitty (official installer)…"
@@ -380,7 +381,27 @@ install_kitty_linux() {
     sed -i \
         "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" \
         "$HOME/.local/share/applications/kitty.desktop" 2>/dev/null || true
-    log "Kitty installed — launch with: kitty"
+    log "Kitty installed"
+    _set_kitty_default_linux
+}
+
+# Set Kitty as the default terminal on Ubuntu (Ctrl+Alt+T, right-click, xdg-open)
+_set_kitty_default_linux() {
+    local kitty_bin="$HOME/.local/bin/kitty"
+    [[ ! -x "$kitty_bin" ]] && return
+
+    # update-alternatives: makes Ctrl+Alt+T and other shortcuts open Kitty
+    if command -v update-alternatives &>/dev/null; then
+        sudo update-alternatives --install /usr/bin/x-terminal-emulator \
+            x-terminal-emulator "$kitty_bin" 100 2>/dev/null || true
+        sudo update-alternatives --set x-terminal-emulator "$kitty_bin" 2>/dev/null || true
+        log "Kitty set as default terminal (x-terminal-emulator)"
+    fi
+
+    # xdg: GNOME apps that open terminals via xdg-open
+    if [[ -f "$HOME/.local/share/applications/kitty.desktop" ]]; then
+        xdg-mime default kitty.desktop x-scheme-handler/terminal 2>/dev/null || true
+    fi
 }
 
 # ── Nerd Font (Linux) ─────────────────────────────────────────────────────────
@@ -452,7 +473,21 @@ set_zsh_default() {
     local zsh_path
     zsh_path=$(command -v zsh)
 
-    # Register zsh in /etc/shells if missing (required by chsh)
+    # Clean up any exec-zsh auto-switch we may have added in a previous run —
+    # Kitty handles the shell choice via kitty.conf (shell .), so the bashrc
+    # hack is unnecessary and causes confusion.
+    local marker="# dotfiles: auto-switch to zsh"
+    if grep -q "$marker" "$HOME/.bashrc" 2>/dev/null; then
+        local tmp; tmp=$(mktemp)
+        grep -v "$marker" "$HOME/.bashrc" \
+            | grep -v "Replaces the bash process" \
+            | grep -v "exec zsh" \
+            | sed '/^$/N;/^\n$/d' > "$tmp"
+        mv "$tmp" "$HOME/.bashrc"
+        log "Removed exec-zsh auto-switch from ~/.bashrc"
+    fi
+
+    # Register zsh in /etc/shells (required by chsh)
     if ! grep -qx "$zsh_path" /etc/shells; then
         echo "$zsh_path" | sudo tee -a /etc/shells >/dev/null
     fi
@@ -460,26 +495,12 @@ set_zsh_default() {
     if [[ "$SHELL" != "$zsh_path" ]]; then
         log "Setting zsh as default login shell…"
         if chsh -s "$zsh_path" 2>/dev/null; then
-            log "Done — open a new terminal window (not exec zsh) to start using zsh"
+            log "Done — zsh is now the login shell"
         else
             warn "chsh needs your password. Run manually: chsh -s $zsh_path"
         fi
     else
         log "zsh is already the default shell"
-    fi
-
-    # Fallback: make bash sessions auto-switch to zsh immediately.
-    # Covers the window between chsh and the next login, and cases where
-    # chsh fails. Only fires in interactive shells so scripts are unaffected.
-    local marker="# dotfiles: auto-switch to zsh"
-    if [[ -f "$HOME/.bashrc" ]] && ! grep -q "$marker" "$HOME/.bashrc"; then
-        cat >> "$HOME/.bashrc" << 'EOF'
-
-# dotfiles: auto-switch to zsh
-# Replaces the bash process with zsh in any interactive bash session.
-[[ $- == *i* && -z "$ZSH_VERSION" ]] && command -v zsh &>/dev/null && exec zsh
-EOF
-        log "Added zsh auto-switch to ~/.bashrc"
     fi
 }
 
