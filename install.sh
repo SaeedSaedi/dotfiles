@@ -598,11 +598,18 @@ install_vscode_extensions() {
             log "Already installed: $ext"
         else
             log "Installing: $ext"
-            local out
-            if ! out=$(code --install-extension "$ext" 2>&1); then
-                warn "Failed to install: $ext"
-                warn "  └ $(echo "$out" | tail -1)"
-            fi
+            local out attempt
+            for attempt in 1 2; do
+                if out=$(code --install-extension "$ext" 2>&1); then
+                    break
+                elif [[ $attempt -eq 1 ]]; then
+                    warn "Retrying: $ext"
+                    sleep 3
+                else
+                    warn "Failed to install: $ext"
+                    warn "  └ $(echo "$out" | tail -1)"
+                fi
+            done
         fi
     done < "$extensions_file"
 

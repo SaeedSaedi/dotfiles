@@ -4,7 +4,7 @@ PKief.material-icon-theme
 
 # ── Python ────────────────────────────────────────────────────────────────
 ms-python.python
-ms-python.pylance
+# ms-python.pylance is auto-installed as a dependency of ms-python.python
 ms-python.black-formatter
 ms-python.debugpy
 

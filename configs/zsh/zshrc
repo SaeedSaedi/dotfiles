@@ -37,6 +37,23 @@ zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 zstyle ':completion:*:descriptions' format '%F{yellow}-- %d --%f'
 
+# ── zsh-autosuggestions config (must be set before OMZ / plugin source) ──────
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=#6c7086"   # Catppuccin Overlay0
+
+# On Linux: auto-clone plugins if missing so the zshrc is self-healing
+if ! $IS_MACOS; then
+    _zsh_custom="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins"
+    [[ ! -d "$_zsh_custom/zsh-autosuggestions" ]] && \
+        git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions \
+            "$_zsh_custom/zsh-autosuggestions" 2>/dev/null
+    [[ ! -d "$_zsh_custom/zsh-syntax-highlighting" ]] && \
+        git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting \
+            "$_zsh_custom/zsh-syntax-highlighting" 2>/dev/null
+    unset _zsh_custom
+fi
+
 # ── Plugins ──────────────────────────────────────────────────────────────────
 plugins=(
     git
@@ -61,11 +78,8 @@ export EDITOR='nvim'
 export VISUAL='nvim'
 
 # ── zsh-autosuggestions ──────────────────────────────────────────────────────
-# Config must be set BEFORE sourcing the plugin
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
-ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE="fg=#6c7086"   # Catppuccin Overlay0 — visible on dark bg
-
+# macOS: source from Homebrew (not in ZSH_CUSTOM so OMZ won't find it)
+# Linux: source from custom plugins (auto-cloned above if missing)
 if [[ -n "$BREW_PREFIX" && -f "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
     source "$BREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"
 elif [[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]]; then
@@ -73,7 +87,7 @@ elif [[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-autosuggestions/z
 fi
 bindkey '^ ' autosuggest-accept    # Ctrl+Space accepts
 
-# ── zsh-syntax-highlighting (must be last sourced plugin) ────────────────────
+# ── zsh-syntax-highlighting (must be sourced last) ────────────────────────────
 if [[ -n "$BREW_PREFIX" && -f "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
     source "$BREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 elif [[ -f "${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]]; then
