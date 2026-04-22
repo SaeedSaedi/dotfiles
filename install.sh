@@ -1,21 +1,40 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 #  Dotfiles installer — macOS (Apple Silicon / Intel) + Ubuntu/Debian Linux
-#  Usage:  ./install.sh [--skip-fonts] [--skip-vscode] [--skip-nvim]
+#
+#  Full install:
+#    ./install.sh
+#
+#  Install specific components only:
+#    ./install.sh claude
+#    ./install.sh nvim tmux
+#    ./install.sh vscode
+#
+#  Components: packages fonts pyenv zsh bat tmux nvim vscode claude configs
+#
+#  Legacy skip flags (still work in full-install mode):
+#    --skip-fonts   --skip-vscode   --skip-nvim
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
-# ── Flags ─────────────────────────────────────────────────────────────────────
+# ── Flags & component selection ───────────────────────────────────────────────
 SKIP_FONTS=false
 SKIP_VSCODE=false
 SKIP_NVIM=false
+ONLY=()   # if non-empty, run only the listed components
+
 for arg in "$@"; do
     case "$arg" in
         --skip-fonts)  SKIP_FONTS=true  ;;
         --skip-vscode) SKIP_VSCODE=true ;;
         --skip-nvim)   SKIP_NVIM=true   ;;
+        --*)           echo "[!] Unknown flag: $arg" >&2 ;;
+        *)             ONLY+=("$arg")   ;;
     esac
 done
+
+# want <component> → true when running everything OR component is in ONLY list
+want() { [[ ${#ONLY[@]} -eq 0 ]] || printf '%s\n' "${ONLY[@]}" | grep -qx "$1"; }
 
 # ── Colors / helpers ──────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -25,7 +44,6 @@ log()     { echo -e "${GREEN}[✓]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[!]${NC} $*"; }
 err()     { echo -e "${RED}[✗]${NC} $*" >&2; exit 1; }
 section() { echo -e "\n${BOLD}${BLUE}══════ $* ══════${NC}"; }
-ask()     { echo -e "${YELLOW}[?]${NC} $*"; }
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -42,9 +60,15 @@ else
     err "Unsupported OS. Only macOS and Linux are supported."
 fi
 
+# ── Extend PATH for the duration of this script ───────────────────────────────
+# Ensures already-installed tools in ~/.local/bin or /usr/local/go are detected
+# correctly by command -v checks, even before the shell profile is sourced.
+export PATH="$HOME/.local/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+
 section "Dotfiles installer  |  OS: $OS  |  Arch: $ARCH"
 echo "  Dotfiles: $DOTFILES"
 echo "  Home:     $HOME"
+[[ ${#ONLY[@]} -gt 0 ]] && echo "  Components: ${ONLY[*]}"
 echo ""
 
 # ── Backup helper ─────────────────────────────────────────────────────────────
@@ -74,7 +98,6 @@ install_homebrew() {
     else
         log "Installing Homebrew…"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        # Add brew to PATH for rest of script
         if [[ "$ARCH" == "arm64" ]]; then
             eval "$(/opt/homebrew/bin/brew shellenv)"
         else
@@ -144,7 +167,7 @@ install_packages_linux() {
 
     sudo apt-get install -y "${apt_pkgs[@]}"
 
-    # Neovim — official binary release (always latest stable)
+    # ── Neovim — official binary release ──────────────────────────────────────
     if ! command -v nvim &>/dev/null; then
         log "Installing Neovim (binary release)…"
         local nvim_arch
@@ -156,7 +179,8 @@ install_packages_linux() {
         local tmpdir
         tmpdir=$(mktemp -d)
         local tag
-        tag=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+        tag=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest \
+              | grep '"tag_name"' | cut -d'"' -f4)
         curl -Lo "$tmpdir/nvim.tar.gz" \
             "https://github.com/neovim/neovim/releases/download/${tag}/nvim-linux-${nvim_arch}.tar.gz"
         tar -xzf "$tmpdir/nvim.tar.gz" -C "$tmpdir"
@@ -168,7 +192,7 @@ install_packages_linux() {
         log "Neovim already installed: $(nvim --version | head -1)"
     fi
 
-    # Go
+    # ── Go ────────────────────────────────────────────────────────────────────
     if ! command -v go &>/dev/null; then
         log "Installing Go…"
         local go_version="1.23.0"
@@ -181,12 +205,12 @@ install_packages_linux() {
         curl -Lo "$tmpdir/go.tar.gz" "https://go.dev/dl/go${go_version}.linux-${go_arch}.tar.gz"
         sudo tar -C /usr/local -xzf "$tmpdir/go.tar.gz"
         rm -rf "$tmpdir"
-        export PATH="$PATH:/usr/local/go/bin"
+        log "Go installed"
     else
         log "Go already installed: $(go version)"
     fi
 
-    # Node.js via NodeSource
+    # ── Node.js via NodeSource ─────────────────────────────────────────────────
     if ! command -v node &>/dev/null; then
         log "Installing Node.js…"
         curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
@@ -195,7 +219,7 @@ install_packages_linux() {
         log "Node.js already installed: $(node --version)"
     fi
 
-    # Claude Code CLI
+    # ── Claude Code CLI ────────────────────────────────────────────────────────
     if ! command -v claude &>/dev/null; then
         log "Installing Claude Code CLI…"
         npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 || \
@@ -204,19 +228,19 @@ install_packages_linux() {
         log "Claude Code already installed: $(claude --version 2>/dev/null | head -1)"
     fi
 
-    # bat (binary is called batcat on Ubuntu)
+    # ── bat (binary is called batcat on Ubuntu) ────────────────────────────────
     if ! command -v bat &>/dev/null && ! command -v batcat &>/dev/null; then
         log "Installing bat…"
         sudo apt-get install -y bat
     fi
-    # Create bat alias if needed
+    # Create bat symlink so scripts/aliases always use 'bat'
     if command -v batcat &>/dev/null && ! command -v bat &>/dev/null; then
         mkdir -p "$HOME/.local/bin"
         ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
-        log "Created bat → batcat symlink"
+        log "Created bat → batcat symlink in ~/.local/bin"
     fi
 
-    # eza
+    # ── eza ───────────────────────────────────────────────────────────────────
     if ! command -v eza &>/dev/null; then
         log "Installing eza…"
         sudo mkdir -p /etc/apt/keyrings
@@ -230,7 +254,8 @@ install_packages_linux() {
         log "eza already installed"
     fi
 
-    # zoxide
+    # ── zoxide ────────────────────────────────────────────────────────────────
+    # Installs to ~/.local/bin — PATH is already extended above so command -v works
     if ! command -v zoxide &>/dev/null; then
         log "Installing zoxide…"
         curl -sSfL https://raw.githubusercontent.com/ajeetdsouza/zoxide/main/install.sh | sh
@@ -238,7 +263,8 @@ install_packages_linux() {
         log "zoxide already installed"
     fi
 
-    # atuin
+    # ── atuin ─────────────────────────────────────────────────────────────────
+    # Installs to ~/.local/bin — PATH is already extended above so command -v works
     if ! command -v atuin &>/dev/null; then
         log "Installing atuin…"
         bash <(curl --proto '=https' --tlsv1.2 -sSf https://setup.atuin.sh)
@@ -246,7 +272,7 @@ install_packages_linux() {
         log "atuin already installed"
     fi
 
-    # git-delta
+    # ── git-delta ─────────────────────────────────────────────────────────────
     if ! command -v delta &>/dev/null; then
         log "Installing git-delta…"
         local delta_ver="0.17.0"
@@ -261,15 +287,17 @@ install_packages_linux() {
         tar -xzf "$tmpdir/delta.tar.gz" -C "$tmpdir"
         sudo install -Dm755 "$tmpdir/delta-${delta_ver}-${delta_arch}/delta" /usr/local/bin/delta
         rm -rf "$tmpdir"
+        log "git-delta installed"
     else
-        log "delta already installed"
+        log "git-delta already installed"
     fi
 
-    # lazygit
+    # ── lazygit ───────────────────────────────────────────────────────────────
     if ! command -v lazygit &>/dev/null; then
         log "Installing lazygit…"
         local lg_ver
-        lg_ver=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+        lg_ver=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest \
+                 | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
         local lg_arch
         case "$ARCH" in
             x86_64)  lg_arch="x86_64" ;;
@@ -281,6 +309,7 @@ install_packages_linux() {
         tar -xzf "$tmpdir/lazygit.tar.gz" -C "$tmpdir"
         sudo install -Dm755 "$tmpdir/lazygit" /usr/local/bin/lazygit
         rm -rf "$tmpdir"
+        log "lazygit installed"
     else
         log "lazygit already installed"
     fi
@@ -387,28 +416,23 @@ install_bat_theme() {
     log "bat theme installed"
 }
 
-# ── Deploy config symlinks ────────────────────────────────────────────────────
+# ── Deploy core config symlinks ───────────────────────────────────────────────
 deploy_configs() {
     section "Deploying configs (symlinks)"
 
-    # zsh
     symlink "$DOTFILES/configs/zsh/zshrc"       "$HOME/.zshrc"
-
-    # git
     symlink "$DOTFILES/configs/git/gitconfig"   "$HOME/.gitconfig"
-
-    # tmux (XDG)
     symlink "$DOTFILES/configs/tmux/tmux.conf"  "$HOME/.config/tmux/tmux.conf"
 
-    # neovim
     backup_existing "$HOME/.config/nvim"
     ln -sf "$DOTFILES/configs/nvim" "$HOME/.config/nvim"
     log "Linked: nvim config dir"
-
-    # undodir used by neovim
     mkdir -p "$HOME/.vim/undodir"
+}
 
-    # claude code
+# ── Deploy Claude Code config ─────────────────────────────────────────────────
+deploy_claude_configs() {
+    section "Deploying Claude configs (symlinks)"
     mkdir -p "$HOME/.claude"
     symlink "$DOTFILES/configs/claude/settings.json"          "$HOME/.claude/settings.json"
     symlink "$DOTFILES/configs/claude/statusline-command.sh"  "$HOME/.claude/statusline-command.sh"
@@ -427,7 +451,6 @@ install_tpm() {
         git clone --depth=1 https://github.com/tmux-plugins/tpm "$tpm_dir"
     fi
 
-    # Install plugins headlessly
     if command -v tmux &>/dev/null; then
         log "Installing tmux plugins headlessly…"
         "$HOME/.tmux/plugins/tpm/bin/install_plugins" >/dev/null 2>&1 || true
@@ -476,7 +499,6 @@ install_vscode_extensions() {
         fi
     done < "$extensions_file"
 
-    # Deploy VS Code settings (default profile)
     local vscode_settings_dir
     if [[ "$OS" == "macos" ]]; then
         vscode_settings_dir="$HOME/Library/Application Support/Code/User"
@@ -493,7 +515,7 @@ install_vscode_extensions() {
 print_summary() {
     section "Done!"
     echo ""
-    echo -e "  ${GREEN}What's installed:${NC}"
+    echo -e "  ${GREEN}What's installed / deployed:${NC}"
     echo "  • Neovim + lazy.nvim (all plugins)"
     echo "  • tmux + TPM plugins (One Dark Pro theme)"
     echo "  • Zsh + Oh My Zsh + autosuggestions + syntax-highlighting"
@@ -504,10 +526,10 @@ print_summary() {
     echo ""
     echo -e "  ${YELLOW}Manual steps remaining:${NC}"
     echo "  1. Set your terminal font to:  JetBrainsMono Nerd Font Mono Regular"
-    echo "  2. Open a new terminal (or run: exec zsh)"
+    echo "  2. Open a new terminal:  exec zsh"
     echo "  3. In Neovim, run :Lazy to verify plugins"
     echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
-    echo "  5. Run 'claude' once to log in (claude auth login)"
+    echo "  5. Log in to Claude:  claude  (runs auth on first launch)"
     echo ""
     echo -e "  ${BLUE}Git config:${NC}  review ~/.gitconfig — update name/email if needed"
     echo ""
@@ -515,28 +537,51 @@ print_summary() {
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 main() {
-    if [[ "$OS" == "macos" ]]; then
-        install_homebrew
-        install_packages_macos
-        install_font_macos
-    else
-        install_packages_linux
-        install_font_linux
+    # ── Packages ──────────────────────────────────────────────────────────────
+    if want packages; then
+        if [[ "$OS" == "macos" ]]; then
+            install_homebrew
+            install_packages_macos
+        else
+            install_packages_linux
+        fi
     fi
 
-    install_pyenv
-    install_ohmyzsh
-
-    if [[ "$OS" == "linux" ]]; then
-        install_zsh_plugins_custom
+    # ── Fonts ─────────────────────────────────────────────────────────────────
+    if want fonts; then
+        [[ "$OS" == "macos" ]] && install_font_macos || install_font_linux
     fi
 
-    set_zsh_default
-    install_bat_theme
-    deploy_configs
-    install_tpm
-    bootstrap_nvim
-    install_vscode_extensions
+    # ── Zsh stack ─────────────────────────────────────────────────────────────
+    if want zsh; then
+        install_pyenv
+        install_ohmyzsh
+        [[ "$OS" == "linux" ]] && install_zsh_plugins_custom
+        set_zsh_default
+    fi
+
+    # ── pyenv standalone ──────────────────────────────────────────────────────
+    # (also run as part of 'zsh'; this allows './install.sh pyenv' on its own)
+    want pyenv && ! want zsh && install_pyenv
+
+    # ── bat theme ─────────────────────────────────────────────────────────────
+    want bat && install_bat_theme
+
+    # ── Core config symlinks ──────────────────────────────────────────────────
+    want configs && deploy_configs
+
+    # ── Claude config symlinks ────────────────────────────────────────────────
+    want claude && deploy_claude_configs
+
+    # ── tmux plugins ─────────────────────────────────────────────────────────
+    want tmux && install_tpm
+
+    # ── Neovim plugin bootstrap ───────────────────────────────────────────────
+    want nvim && bootstrap_nvim
+
+    # ── VS Code ───────────────────────────────────────────────────────────────
+    want vscode && install_vscode_extensions
+
     print_summary
 }
 

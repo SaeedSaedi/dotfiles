@@ -12,7 +12,36 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Optional flags
+## Install specific components
+
+Pass one or more component names to install only those parts:
+
+```bash
+./install.sh claude          # deploy Claude Code config only
+./install.sh nvim            # neovim plugin bootstrap only
+./install.sh tmux            # tmux TPM + plugins only
+./install.sh vscode          # VS Code extensions + settings only
+./install.sh zsh             # Oh My Zsh + plugins + set as default shell
+./install.sh configs         # re-link all config symlinks (zsh, git, tmux, nvim)
+./install.sh nvim tmux       # multiple components at once
+```
+
+### Available components
+
+| Component  | What it does                                                  |
+|------------|---------------------------------------------------------------|
+| `packages` | Install OS packages (apt / Homebrew)                          |
+| `fonts`    | Install JetBrains Mono Nerd Font                              |
+| `pyenv`    | Install pyenv (Python version manager)                        |
+| `zsh`      | Oh My Zsh + plugins + set zsh as default shell                |
+| `bat`      | Install bat Catppuccin Mocha theme                            |
+| `tmux`     | TPM + headless plugin install                                 |
+| `nvim`     | Bootstrap Neovim lazy.nvim plugins                            |
+| `vscode`   | Install VS Code extensions + deploy settings                  |
+| `claude`   | Symlink Claude Code `settings.json` + statusline script       |
+| `configs`  | Symlink all configs: zsh, git, tmux, nvim                     |
+
+### Legacy skip flags (full-install mode only)
 
 | Flag             | Effect                              |
 |------------------|-------------------------------------|
@@ -67,15 +96,22 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - Language support: Python (black), PHP/Laravel (intelephense + blade), Go, JS/TS (prettier), YAML
 - Extensions: GitLens, Copilot, Claude Code, ErrorLens, indent-rainbow, REST Client, Todo Tree
 
+### Claude Code
+- **Statusline**: custom command-based statusline showing directory, git branch, model, context usage, token count, session cost, and rate limits
+- **Config**: `~/.claude/settings.json` + `~/.claude/statusline-command.sh` deployed via symlinks
+- **CLI**: installed automatically on Linux via `npm install -g @anthropic-ai/claude-code`
+
 ## Config locations (after install)
 
-| Config    | Symlinked from                 | Points to                        |
-|-----------|--------------------------------|----------------------------------|
-| `zshrc`   | `~/.zshrc`                     | `configs/zsh/zshrc`              |
-| `nvim`    | `~/.config/nvim`               | `configs/nvim/`                  |
-| `tmux`    | `~/.config/tmux/tmux.conf`     | `configs/tmux/tmux.conf`         |
-| `git`     | `~/.gitconfig`                 | `configs/git/gitconfig`          |
-| VS Code   | `*/Code/User/settings.json`    | copied (not symlinked)           |
+| Config          | Symlinked to                        | Source                                       |
+|-----------------|-------------------------------------|----------------------------------------------|
+| `zshrc`         | `~/.zshrc`                          | `configs/zsh/zshrc`                          |
+| `nvim`          | `~/.config/nvim`                    | `configs/nvim/`                              |
+| `tmux`          | `~/.config/tmux/tmux.conf`          | `configs/tmux/tmux.conf`                     |
+| `git`           | `~/.gitconfig`                      | `configs/git/gitconfig`                      |
+| `claude`        | `~/.claude/settings.json`           | `configs/claude/settings.json`               |
+| `claude`        | `~/.claude/statusline-command.sh`   | `configs/claude/statusline-command.sh`       |
+| VS Code         | `*/Code/User/settings.json`         | copied (not symlinked)                       |
 
 ## After install
 
@@ -83,6 +119,7 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 2. Open a new terminal: `exec zsh`
 3. In Neovim, run `:Mason` to confirm LSP servers are installed
 4. In tmux, press `Prefix+I` then `Enter` to confirm plugins are loaded
+5. Run `claude` to log in on first launch
 
 ## Updating
 
