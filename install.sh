@@ -21,6 +21,7 @@ set -euo pipefail
 SKIP_FONTS=false
 SKIP_VSCODE=false
 SKIP_NVIM=false
+SKIP_ATUIN=false
 ONLY=()   # if non-empty, run only the listed components
 
 for arg in "$@"; do
@@ -28,6 +29,7 @@ for arg in "$@"; do
         --skip-fonts)  SKIP_FONTS=true  ;;
         --skip-vscode) SKIP_VSCODE=true ;;
         --skip-nvim)   SKIP_NVIM=true   ;;
+        --skip-atuin)  SKIP_ATUIN=true  ;;
         --*)           echo "[!] Unknown flag: $arg" >&2 ;;
         *)             ONLY+=("$arg")   ;;
     esac
@@ -293,13 +295,26 @@ https://packages.microsoft.com/repos/code stable main" \
         log "zoxide already installed"
     fi
 
-    # ── atuin ─────────────────────────────────────────────────────────────────
+    # ── atuin (optional) ──────────────────────────────────────────────────────
     # Installs to ~/.local/bin — PATH is already extended above so command -v works
-    if ! command -v atuin &>/dev/null; then
-        log "Installing atuin…"
-        bash <(curl --proto '=https' --tlsv1.2 -sSf https://setup.atuin.sh)
-    else
+    if command -v atuin &>/dev/null; then
         log "atuin already installed"
+    elif $SKIP_ATUIN; then
+        log "atuin skipped (--skip-atuin)"
+    else
+        # Ask interactively; auto-install if stdin is not a terminal (CI/pipe)
+        local install_atuin=true
+        if [[ -t 0 ]]; then
+            echo -e "\n${YELLOW}[?]${NC} Install atuin? (Ctrl+R shell history search — replaces default history) [y/N] "
+            read -r _ans
+            [[ "$_ans" =~ ^[Yy]$ ]] || install_atuin=false
+        fi
+        if $install_atuin; then
+            log "Installing atuin…"
+            bash <(curl --proto '=https' --tlsv1.2 -sSf https://setup.atuin.sh)
+        else
+            log "atuin skipped"
+        fi
     fi
 
     # ── git-delta ─────────────────────────────────────────────────────────────
