@@ -22,25 +22,26 @@ Pass one or more component names to install only those parts:
 ./install.sh tmux            # tmux TPM + plugins only
 ./install.sh vscode          # VS Code extensions + settings only
 ./install.sh zsh             # Oh My Zsh + plugins + set as default shell
-./install.sh configs         # re-link all config symlinks (zsh, git, tmux, nvim)
+./install.sh kitty           # Kitty terminal install + config symlink
+./install.sh configs         # re-link all config symlinks (zsh, git, tmux, nvim, kitty)
 ./install.sh nvim tmux       # multiple components at once
 ```
 
 ### Available components
 
-| Component  | What it does                                                  |
-|------------|---------------------------------------------------------------|
-| `packages` | Install OS packages (apt / Homebrew)                          |
-| `fonts`    | Install JetBrains Mono Nerd Font                              |
-| `pyenv`    | Install pyenv (Python version manager)                        |
-| `zsh`      | Oh My Zsh + plugins + set zsh as default shell                |
-| `bat`      | Install bat Catppuccin Mocha theme                            |
-| `kitty`    | Install Kitty terminal + deploy Catppuccin Mocha config       |
-| `tmux`     | TPM + headless plugin install                                 |
-| `nvim`     | Bootstrap Neovim lazy.nvim plugins                            |
-| `vscode`   | Install VS Code extensions + deploy settings                  |
-| `claude`   | Symlink Claude Code `settings.json` + statusline script       |
-| `configs`  | Symlink all configs: zsh, git, tmux, nvim                     |
+| Component  | What it does                                                           |
+|------------|------------------------------------------------------------------------|
+| `packages` | Install OS packages (apt / Homebrew)                                   |
+| `fonts`    | Install JetBrains Mono Nerd Font                                       |
+| `pyenv`    | Install pyenv (Python version manager)                                 |
+| `zsh`      | Oh My Zsh + plugins + set zsh as default shell                         |
+| `bat`      | Install bat Catppuccin Mocha theme                                     |
+| `kitty`    | Install Kitty terminal (cask on macOS) + deploy Catppuccin Mocha config|
+| `tmux`     | TPM + headless plugin install                                          |
+| `nvim`     | Bootstrap Neovim lazy.nvim plugins                                     |
+| `vscode`   | Install VS Code extensions (with marketplace pre-check) + deploy settings|
+| `claude`   | Symlink Claude Code `settings.json` + statusline script                |
+| `configs`  | Symlink all configs: zsh, git, tmux, nvim, kitty                       |
 
 ### Legacy skip flags (full-install mode only)
 
@@ -49,14 +50,34 @@ Pass one or more component names to install only those parts:
 | `--skip-fonts`   | Skip Nerd Font installation         |
 | `--skip-vscode`  | Skip VS Code extensions + settings  |
 | `--skip-nvim`    | Skip Neovim plugin bootstrap        |
+| `--skip-atuin`   | Skip atuin install (non-interactive)|
+
+## Smoke tests
+
+After installing, verify everything is set up correctly:
+
+```bash
+chmod +x test.sh
+./test.sh              # run all checks
+./test.sh tools        # check binaries only
+./test.sh symlinks     # check config symlinks only
+./test.sh configs      # check config file validity
+./test.sh shell        # check shell environment (default shell, PATH, OMZ)
+./test.sh fonts        # check Nerd Font installation
+./test.sh vscode       # check VS Code extensions
+```
+
+The test script uses the same PATH extension logic as the installer, so it accurately
+reflects the post-install state. It exits with code 1 if any check fails, making it
+suitable for CI verification.
 
 ## What gets installed
 
 ### Shell
 - **Zsh** with [Oh My Zsh](https://ohmyz.sh/)
-- **zsh-autosuggestions** — inline history suggestions
+- **zsh-autosuggestions** — inline history suggestions (Homebrew on macOS, auto-cloned on Linux)
 - **zsh-syntax-highlighting** — command coloring
-- **atuin** — searchable shell history (`Ctrl+R`)
+- **atuin** — searchable shell history (`Ctrl+R`) — optional, prompted during install
 - **zoxide** — smart `cd` that learns your dirs
 
 ### Terminal tools
@@ -73,6 +94,17 @@ Pass one or more component names to install only those parts:
 | `pyenv`     | Python version manager               |
 | `direnv`    | Per-directory env vars               |
 | `gh`        | GitHub CLI                           |
+
+### fzf key bindings
+fzf shell integration (key bindings and tab completion) is sourced directly rather
+than via the Oh My Zsh plugin, so it works correctly on both macOS (Homebrew) and
+Linux (apt `fzf` package, `/usr/share/doc/fzf/examples/`):
+
+| Key            | Action                          |
+|----------------|---------------------------------|
+| `Ctrl+T`       | Fuzzy-find files, paste to CLI  |
+| `Ctrl+R`       | Fuzzy search history (atuin if installed, else fzf) |
+| `Alt+C`        | Fuzzy cd into directory         |
 
 ### Neovim
 Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
@@ -96,11 +128,18 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 - Theme: One Dark Pro
 - Language support: Python (black), PHP/Laravel (intelephense + blade), Go, JS/TS (prettier), YAML
 - Extensions: GitLens, Copilot, Claude Code, ErrorLens, indent-rainbow, REST Client, Todo Tree
+- **Smart extension install**: the installer pre-checks each extension against the
+  VS Code Marketplace before starting (saves time by skipping unavailable ones),
+  verifies marketplace connectivity, classifies failures as "not found" vs network
+  errors, and retries transient failures once with a 5-second pause.
 
 ### Kitty Terminal
 - **Theme**: Catppuccin Mocha (matches Neovim + bat)
 - **Font**: JetBrains Mono Nerd Font with ligatures, 13pt
 - **Features**: GPU-accelerated, tab bar (powerline slanted), 0.96 background opacity
+- **Shell**: `shell .` — uses the system default shell (set via `chsh`)
+- **macOS**: installed as a Homebrew cask (`brew install --cask kitty`)
+- **Linux**: installed via the official Kitty installer; set as default terminal via `update-alternatives`
 - **Keybindings**: `Ctrl+Shift+T` new tab, `Ctrl+Shift+H/J/K/L` navigate splits, `Ctrl+Shift+Enter` new split
 - **Config**: `~/.config/kitty/kitty.conf` deployed via symlink
 
@@ -126,13 +165,26 @@ Configured with [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 1. **Set terminal font** to `JetBrainsMono Nerd Font Mono Regular`
 2. Open a new terminal: `exec zsh`
-3. In Neovim, run `:Mason` to confirm LSP servers are installed
-4. In tmux, press `Prefix+I` then `Enter` to confirm plugins are loaded
-5. Run `claude` to log in on first launch
+3. Run `./test.sh` to verify everything is set up correctly
+4. In Neovim, run `:Mason` to confirm LSP servers are installed
+5. In tmux, press `Prefix+I` then `Enter` to confirm plugins are loaded
+6. Run `claude` to log in on first launch
 
 ## Updating
 
 Pull the repo and re-run `./install.sh` — it's fully idempotent (safe to run multiple times).
+
+## Known platform differences
+
+| Feature                  | macOS                          | Ubuntu / Debian                            |
+|--------------------------|--------------------------------|--------------------------------------------|
+| Kitty install            | `brew install --cask kitty`    | Official installer → `~/.local/kitty.app`  |
+| Default terminal         | Set in System Settings         | `update-alternatives --set x-terminal-emulator` |
+| bat binary name          | `bat`                          | `batcat` (symlinked to `bat` in `~/.local/bin`) |
+| fd binary name           | `fd`                           | `fdfind` (use `fd` via Oh My Zsh alias)    |
+| fzf shell integration    | Homebrew (`$BREW_PREFIX/opt/fzf/shell/`) | `/usr/share/doc/fzf/examples/`  |
+| npm global prefix        | Homebrew-managed               | `~/.local` (no sudo needed)                |
+| Go version               | Homebrew latest                | Fetched dynamically from go.dev/dl         |
 
 ## Proxy
 

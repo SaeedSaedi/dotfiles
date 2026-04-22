@@ -653,7 +653,6 @@ install_vscode_extensions() {
     fi
 
     # Detect code-oss / VSCodium — they can't access Microsoft's marketplace.
-    # The Microsoft build has marketplace.visualstudio.com in its product.json.
     local code_bin
     code_bin=$(readlink -f "$(command -v code)")
     local product_json
@@ -665,43 +664,115 @@ install_vscode_extensions() {
         return
     fi
 
+    # ── Pre-flight: check marketplace reachability ────────────────────────────
+    log "Checking VS Code Marketplace connectivity…"
+    local market_http
+    market_http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+        "https://marketplace.visualstudio.com" 2>/dev/null || echo "000")
+    if [[ "$market_http" != "200" ]]; then
+        warn "Marketplace unreachable (HTTP $market_http) — extensions may fail."
+        warn "Check your network / proxy settings before proceeding."
+        if [[ -t 0 ]]; then
+            echo -e "\n${YELLOW}[?]${NC} Continue anyway? [y/N] "
+            read -r _ans
+            [[ "$_ans" =~ ^[Yy]$ ]] || { warn "Skipping extension install."; return; }
+        fi
+    else
+        log "Marketplace reachable ✓"
+    fi
+
+    # ── Pre-check each extension against the marketplace ─────────────────────
+    # Avoids wasting install time on extensions that don't exist or are private.
     local extensions_file="$DOTFILES/configs/vscode/extensions.txt"
-    local installed
-    installed=$(code --list-extensions 2>/dev/null)
-    local -a failed=()
+    local -a to_install=() not_found=()
+
+    log "Pre-checking extension availability in marketplace…"
+    local total=0 idx=0
+    # Count extensions first for progress display
+    while IFS= read -r ext; do
+        [[ -z "$ext" || "$ext" == \#* ]] && continue
+        (( total++ )) || true
+    done < "$extensions_file"
 
     while IFS= read -r ext; do
         [[ -z "$ext" || "$ext" == \#* ]] && continue
-        if echo "$installed" | grep -qi "^${ext}$"; then
-            log "Already installed: $ext"
+        (( idx++ )) || true
+        printf "  [%d/%d] checking %-50s\r" "$idx" "$total" "$ext"
+        local http
+        http=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
+            "https://marketplace.visualstudio.com/items?itemName=${ext}" 2>/dev/null || echo "000")
+        if [[ "$http" == "200" ]]; then
+            to_install+=("$ext")
         else
-            log "Installing: $ext"
-            local out attempt ok=false
-            for attempt in 1 2; do
-                if out=$(code --install-extension "$ext" 2>&1); then
-                    ok=true; break
-                elif [[ $attempt -eq 1 ]]; then
-                    sleep 3   # brief pause before retry
-                fi
-            done
-            $ok || failed+=("$ext")
+            not_found+=("$ext")
+            printf "  %-60s\r" ""   # clear progress line
+            warn "Not in marketplace (HTTP $http) — will skip: $ext"
         fi
     done < "$extensions_file"
+    printf "  %-60s\r" ""  # clear final progress line
 
-    # Print a single actionable summary for everything that failed
-    if [[ ${#failed[@]} -gt 0 ]]; then
-        warn "${#failed[@]} extension(s) failed after retry:"
-        for ext in "${failed[@]}"; do
-            warn "  • $ext"
-        done
-        warn "Retry command:"
-        local retry_cmd="code"
-        for ext in "${failed[@]}"; do
-            retry_cmd+=" --install-extension $ext"
-        done
-        warn "  $retry_cmd"
+    if [[ ${#not_found[@]} -gt 0 ]]; then
+        warn "${#not_found[@]} extension(s) not found in marketplace — skipped before install."
+    fi
+    log "${#to_install[@]} / $total extensions available — starting install…"
+
+    # ── Install loop ──────────────────────────────────────────────────────────
+    local installed
+    installed=$(code --list-extensions 2>/dev/null)
+    local -a failed=() idx2=0
+
+    for ext in "${to_install[@]}"; do
+        (( idx2++ )) || true
+        if echo "$installed" | grep -qi "^${ext}$"; then
+            log "[$idx2/${#to_install[@]}] Already installed: $ext"
+            continue
+        fi
+        log "[$idx2/${#to_install[@]}] Installing: $ext"
+        local out ok=false
+        # First attempt
+        out=$(timeout 120 code --install-extension "$ext" 2>&1) && ok=true
+        # Classify failure before deciding to retry
+        if ! $ok; then
+            if echo "$out" | grep -qi "not found\|does not exist\|No extension found"; then
+                warn "  Extension not found at install time (marketplace index lag?): $ext"
+                failed+=("$ext [not found]")
+                continue
+            fi
+            # Network/transient error — retry once after a pause
+            warn "  Install failed, retrying in 5s… ($ext)"
+            sleep 5
+            out=$(timeout 120 code --install-extension "$ext" 2>&1) && ok=true
+        fi
+        if ! $ok; then
+            warn "  Failed: $ext"
+            warn "  Reason: $(echo "$out" | tail -1)"
+            failed+=("$ext")
+        fi
+    done
+
+    # ── Failure summary ───────────────────────────────────────────────────────
+    if [[ ${#failed[@]} -gt 0 || ${#not_found[@]} -gt 0 ]]; then
+        echo ""
+        warn "── Extension install summary ─────────────────────────────"
+        if [[ ${#not_found[@]} -gt 0 ]]; then
+            warn "Skipped (not in marketplace):"
+            for ext in "${not_found[@]}"; do warn "  • $ext"; done
+        fi
+        if [[ ${#failed[@]} -gt 0 ]]; then
+            warn "Failed to install:"
+            for ext in "${failed[@]}"; do warn "  • $ext"; done
+            warn "Retry command:"
+            local retry_cmd="code"
+            for ext in "${failed[@]}"; do
+                retry_cmd+=" --install-extension ${ext%% *}"
+            done
+            warn "  $retry_cmd"
+        fi
+    else
+        log "All extensions installed successfully"
     fi
 
+    # ── Deploy settings ───────────────────────────────────────────────────────
     local vscode_settings_dir
     if [[ "$OS" == "macos" ]]; then
         vscode_settings_dir="$HOME/Library/Application Support/Code/User"
