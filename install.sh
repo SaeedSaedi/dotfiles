@@ -10,7 +10,7 @@
 #    ./install.sh nvim tmux
 #    ./install.sh vscode
 #
-#  Components: packages fonts pyenv zsh bat kitty tmux nvim vscode claude configs
+#  Components: packages fonts paths pyenv zsh bat kitty tmux nvim vscode claude configs
 #
 #  Legacy skip flags (still work in full-install mode):
 #    --skip-fonts   --skip-vscode   --skip-nvim
@@ -166,6 +166,25 @@ install_packages_linux() {
     )
 
     sudo apt-get install -y "${apt_pkgs[@]}"
+
+    # ── VS Code — official Microsoft build (not code-oss) ─────────────────────
+    # code-oss from Ubuntu repos uses Open VSX and can't install Microsoft-
+    # marketplace extensions (Copilot, Pylance, GitLens, etc.). We always
+    # install from Microsoft's own apt repo so 'code' is the real VS Code.
+    if ! command -v code &>/dev/null; then
+        log "Installing VS Code (Microsoft apt repo)…"
+        wget -qO- https://packages.microsoft.com/keys/microsoft.asc \
+            | gpg --dearmor \
+            | sudo tee /etc/apt/keyrings/microsoft-vscode.gpg >/dev/null
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft-vscode.gpg] \
+https://packages.microsoft.com/repos/code stable main" \
+            | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null
+        sudo apt-get update -qq
+        sudo apt-get install -y code
+        log "VS Code installed: $(code --version 2>/dev/null | head -1)"
+    else
+        log "VS Code already installed: $(code --version 2>/dev/null | head -1)"
+    fi
 
     # ── Neovim — official binary release ──────────────────────────────────────
     if ! command -v nvim &>/dev/null; then
@@ -428,6 +447,42 @@ set_zsh_default() {
     fi
 }
 
+# ── Persist tool paths to ~/.profile and ~/.bashrc (Linux) ───────────────────
+# ~/.zshrc already handles zsh sessions. ~/.profile is sourced by GNOME and
+# bash login shells, so all tools are reachable before/outside zsh.
+setup_paths_linux() {
+    section "Configuring PATH (~/.profile + ~/.bashrc)"
+
+    local begin="# >>> dotfiles-paths >>>"
+    local end="# <<< dotfiles-paths <<<"
+
+    # Path block to inject
+    local block
+    block=$(cat << 'PATHBLOCK'
+# >>> dotfiles-paths >>>
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+if [ -d "$HOME/.pyenv" ]; then
+    export PYENV_ROOT="$HOME/.pyenv"
+    export PATH="$PYENV_ROOT/bin:$PATH"
+fi
+# <<< dotfiles-paths <<<
+PATHBLOCK
+)
+
+    for rc in "$HOME/.profile" "$HOME/.bashrc"; do
+        # Remove existing block (idempotent re-runs)
+        if grep -q "$begin" "$rc" 2>/dev/null; then
+            # Use temp file for portability
+            local tmp; tmp=$(mktemp)
+            awk "/$begin/{found=1} !found{print} /$end/{found=0}" "$rc" > "$tmp"
+            mv "$tmp" "$rc"
+        fi
+        printf '\n%s\n' "$block" >> "$rc"
+        log "PATH block written to $rc"
+    done
+}
+
 # ── Bat Catppuccin theme ──────────────────────────────────────────────────────
 install_bat_theme() {
     section "bat Catppuccin Mocha theme"
@@ -516,7 +571,20 @@ install_vscode_extensions() {
 
     if ! command -v code &>/dev/null; then
         warn "VS Code 'code' CLI not found — skipping extension install"
-        warn "Install VS Code and run:  code --install-extension <id>"
+        warn "Install VS Code from: https://code.visualstudio.com/docs/setup/linux"
+        return
+    fi
+
+    # Detect code-oss / VSCodium — they can't access Microsoft's marketplace.
+    # The Microsoft build has marketplace.visualstudio.com in its product.json.
+    local code_bin
+    code_bin=$(readlink -f "$(command -v code)")
+    local product_json
+    product_json=$(dirname "$code_bin")/../resources/app/product.json
+    if [[ -f "$product_json" ]] && ! grep -q "marketplace.visualstudio.com" "$product_json"; then
+        warn "Detected code-oss / VSCodium — Microsoft marketplace extensions will fail."
+        warn "Install official VS Code: https://code.visualstudio.com/docs/setup/linux"
+        warn "Skipping extension install."
         return
     fi
 
@@ -530,8 +598,11 @@ install_vscode_extensions() {
             log "Already installed: $ext"
         else
             log "Installing: $ext"
-            code --install-extension "$ext" --force >/dev/null 2>&1 || \
+            local out
+            if ! out=$(code --install-extension "$ext" 2>&1); then
                 warn "Failed to install: $ext"
+                warn "  └ $(echo "$out" | tail -1)"
+            fi
         fi
     done < "$extensions_file"
 
@@ -562,8 +633,8 @@ print_summary() {
     echo "  • Claude Code CLI + statusline config"
     echo ""
     echo -e "  ${YELLOW}Manual steps remaining:${NC}"
-    echo "  1. Launch Kitty — font is auto-configured (JetBrainsMono Nerd Font)"
-    echo "  2. Open a new terminal:  exec zsh"
+    echo "  1. Open a new terminal (or run: exec zsh) — paths are now auto-loaded"
+    echo "  2. Launch Kitty — font + theme are pre-configured"
     echo "  3. In Neovim, run :Lazy to verify plugins"
     echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
     echo "  5. Log in to Claude:  claude  (runs auth on first launch)"
@@ -592,6 +663,12 @@ main() {
     # ── Kitty terminal ────────────────────────────────────────────────────────
     if want kitty; then
         [[ "$OS" == "linux" ]] && install_kitty_linux || log "Kitty: install via Homebrew (brew install --cask kitty)"
+    fi
+
+    # ── PATH setup (Linux — writes ~/.profile + ~/.bashrc) ───────────────────
+    # Run whenever packages or zsh are being set up, or as a standalone target.
+    if [[ "$OS" == "linux" ]] && { want packages || want zsh || want paths; }; then
+        setup_paths_linux
     fi
 
     # ── Zsh stack ─────────────────────────────────────────────────────────────
