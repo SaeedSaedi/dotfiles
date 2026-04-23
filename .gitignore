@@ -1,0 +1,31 @@
+# Local override files — never commit these
+*.local
+!*.local.example
+
+# Common secret / credential patterns
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+credentials.json
+secrets.*
+token.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor temporaries
+*.swp
+*.swo
+*~
+.idea/
+.vscode/settings.json

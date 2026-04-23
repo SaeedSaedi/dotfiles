@@ -1,6 +1,5 @@
-[user]
-	email = saeed.saedi.s@gmail.com
-	name = saeed saedi
+[include]
+	path = ~/.gitconfig.local
 
 [core]
 	pager = delta

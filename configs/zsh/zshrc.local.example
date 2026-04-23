@@ -1,0 +1,41 @@
+# ~/.zshrc.local — machine-specific shell configuration
+# Copy this file to ~/.zshrc.local and edit it.
+# It is sourced at the end of ~/.zshrc and is never committed to the repo.
+
+# ── Proxy helpers ─────────────────────────────────────────────────────────────
+# Adjust these addresses to match your proxy setup.
+PROXY_HTTP="http://127.0.0.1:8118"
+PROXY_SOCKS="socks5://127.0.0.1:1080"
+
+enable_proxy() {
+    export HTTP_PROXY=$PROXY_HTTP HTTPS_PROXY=$PROXY_HTTP
+    export http_proxy=$PROXY_HTTP https_proxy=$PROXY_HTTP
+    export ALL_PROXY=$PROXY_SOCKS all_proxy=$PROXY_SOCKS
+    export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
+    git config --global http.proxy $PROXY_HTTP
+    git config --global https.proxy $PROXY_HTTP
+    command -v npm  &>/dev/null && npm  config set proxy $PROXY_HTTP && npm  config set https-proxy $PROXY_HTTP
+    command -v yarn &>/dev/null && yarn config set proxy $PROXY_HTTP && yarn config set https-proxy $PROXY_HTTP
+    command -v pip  &>/dev/null && pip  config set global.proxy $PROXY_HTTP 2>/dev/null
+    echo "Proxy enabled ($PROXY_HTTP)"
+}
+
+disable_proxy() {
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
+    git config --global --unset http.proxy  2>/dev/null || true
+    git config --global --unset https.proxy 2>/dev/null || true
+    command -v npm  &>/dev/null && npm  config delete proxy && npm  config delete https-proxy
+    command -v yarn &>/dev/null && yarn config delete proxy && yarn config delete https-proxy
+    command -v pip  &>/dev/null && pip  config unset global.proxy 2>/dev/null || true
+    echo "Proxy disabled"
+}
+
+# VS Code with proxy (macOS)
+# alias codep='code --proxy-server="http://127.0.0.1:8118"'
+
+# ── JetBrains VM options (macOS) ─────────────────────────────────────────────
+# [[ -f "$HOME/.jetbrains.vmoptions.sh" ]] && source "$HOME/.jetbrains.vmoptions.sh"
+
+# ── Work / project aliases ────────────────────────────────────────────────────
+# alias work='cd ~/work/myproject'
+# export GITHUB_TOKEN="ghp_..."   # never put tokens here; use a secrets manager

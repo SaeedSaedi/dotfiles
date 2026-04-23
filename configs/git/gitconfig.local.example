@@ -1,0 +1,9 @@
+[user]
+	name = Your Name
+	email = your@email.com
+
+# Optional: per-machine signing key
+# [user]
+# 	signingkey = YOUR_GPG_KEY_ID
+# [commit]
+# 	gpgsign = true
