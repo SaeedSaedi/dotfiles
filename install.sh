@@ -11,6 +11,7 @@
 #    ./install.sh vscode
 #
 #  Components: packages fonts paths pyenv zsh bat kitty tmux nvim vscode claude configs
+#             update doctor
 #
 #  Legacy skip flags (still work in full-install mode):
 #    --skip-fonts   --skip-vscode   --skip-nvim
@@ -66,6 +67,7 @@ fi
 # Ensures already-installed tools in ~/.local/bin or /usr/local/go are detected
 # correctly by command -v checks, even before the shell profile is sourced.
 export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+export DOTFILES  # make repo path available to update_dotfiles / run_doctor subshells
 
 section "Dotfiles installer  |  OS: $OS  |  Arch: $ARCH"
 echo "  Dotfiles: $DOTFILES"
@@ -89,6 +91,12 @@ symlink() {
     backup_existing "$dest"
     ln -sf "$src" "$dest"
     log "Linked: $(basename "$dest")"
+}
+
+# github_latest <owner/repo>  →  latest release tag, e.g. "v1.2.3"
+github_latest() {
+    curl -sf "https://api.github.com/repos/$1/releases/latest" \
+        | grep '"tag_name"' | cut -d'"' -f4
 }
 
 # ── Homebrew (macOS) ──────────────────────────────────────────────────────────
@@ -208,8 +216,7 @@ https://packages.microsoft.com/repos/code stable main" \
         local tmpdir
         tmpdir=$(mktemp -d)
         local tag
-        tag=$(curl -s https://api.github.com/repos/neovim/neovim/releases/latest \
-              | grep '"tag_name"' | cut -d'"' -f4)
+        tag=$(github_latest "neovim/neovim")
         curl -Lo "$tmpdir/nvim.tar.gz" \
             "https://github.com/neovim/neovim/releases/download/${tag}/nvim-linux-${nvim_arch}.tar.gz"
         tar -xzf "$tmpdir/nvim.tar.gz" -C "$tmpdir"
@@ -332,15 +339,16 @@ https://packages.microsoft.com/repos/code stable main" \
     # ── git-delta ─────────────────────────────────────────────────────────────
     if ! command -v delta &>/dev/null; then
         log "Installing git-delta…"
-        local delta_ver="0.17.0"
-        local delta_arch
+        local delta_tag delta_ver delta_arch
+        delta_tag=$(github_latest "dandavison/delta")
+        delta_ver="${delta_tag#v}"
         case "$ARCH" in
             x86_64)  delta_arch="x86_64-unknown-linux-musl" ;;
             aarch64) delta_arch="aarch64-unknown-linux-musl" ;;
         esac
         local tmpdir; tmpdir=$(mktemp -d)
         curl -Lo "$tmpdir/delta.tar.gz" \
-            "https://github.com/dandavison/delta/releases/download/${delta_ver}/delta-${delta_ver}-${delta_arch}.tar.gz"
+            "https://github.com/dandavison/delta/releases/download/${delta_tag}/delta-${delta_ver}-${delta_arch}.tar.gz"
         tar -xzf "$tmpdir/delta.tar.gz" -C "$tmpdir"
         sudo install -Dm755 "$tmpdir/delta-${delta_ver}-${delta_arch}/delta" /usr/local/bin/delta
         rm -rf "$tmpdir"
@@ -352,9 +360,9 @@ https://packages.microsoft.com/repos/code stable main" \
     # ── lazygit ───────────────────────────────────────────────────────────────
     if ! command -v lazygit &>/dev/null; then
         log "Installing lazygit…"
-        local lg_ver
-        lg_ver=$(curl -s https://api.github.com/repos/jesseduffield/lazygit/releases/latest \
-                 | grep '"tag_name"' | cut -d'"' -f4 | sed 's/v//')
+        local lg_tag lg_ver
+        lg_tag=$(github_latest "jesseduffield/lazygit")
+        lg_ver="${lg_tag#v}"
         local lg_arch
         case "$ARCH" in
             x86_64)  lg_arch="x86_64" ;;
@@ -402,6 +410,17 @@ _set_kitty_default_linux() {
     local kitty_bin="$HOME/.local/bin/kitty"
     [[ ! -x "$kitty_bin" ]] && return
 
+    local set_default=false
+    if [[ -t 0 ]]; then
+        echo -e "\n${YELLOW}[?]${NC} Set Kitty as default terminal emulator? (replaces Ctrl+Alt+T) [y/N] "
+        read -r _ans
+        [[ "$_ans" =~ ^[Yy]$ ]] && set_default=true
+    fi
+    if ! $set_default; then
+        log "Kitty installed but not set as default terminal — run './install.sh kitty' to change later"
+        return
+    fi
+
     # update-alternatives: makes Ctrl+Alt+T and other shortcuts open Kitty
     if command -v update-alternatives &>/dev/null; then
         sudo update-alternatives --install /usr/bin/x-terminal-emulator \
@@ -427,9 +446,11 @@ install_font_linux() {
     fi
     log "Downloading JetBrains Mono Nerd Font…"
     mkdir -p "$font_dir"
-    local tmpdir; tmpdir=$(mktemp -d)
+    local font_tag tmpdir
+    font_tag=$(github_latest "ryanoasis/nerd-fonts")
+    tmpdir=$(mktemp -d)
     curl -Lo "$tmpdir/JetBrainsMono.zip" \
-        "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip"
+        "https://github.com/ryanoasis/nerd-fonts/releases/download/${font_tag}/JetBrainsMono.zip"
     unzip -q "$tmpdir/JetBrainsMono.zip" -d "$font_dir"
     fc-cache -fv "$font_dir" >/dev/null
     rm -rf "$tmpdir"
@@ -509,11 +530,21 @@ set_zsh_default() {
     fi
 
     if [[ "$SHELL" != "$zsh_path" ]]; then
-        log "Setting zsh as default login shell…"
-        if chsh -s "$zsh_path" 2>/dev/null; then
-            log "Done — zsh is now the login shell"
+        local do_chsh=true
+        if [[ -t 0 ]]; then
+            echo -e "\n${YELLOW}[?]${NC} Set zsh as default login shell? [Y/n] "
+            read -r _ans
+            [[ -z "$_ans" || "$_ans" =~ ^[Yy]$ ]] || do_chsh=false
+        fi
+        if $do_chsh; then
+            log "Setting zsh as default login shell…"
+            if chsh -s "$zsh_path" 2>/dev/null; then
+                log "Done — zsh is now the login shell"
+            else
+                warn "chsh needs your password. Run manually: chsh -s $zsh_path"
+            fi
         else
-            warn "chsh needs your password. Run manually: chsh -s $zsh_path"
+            warn "Skipped — to set zsh as default later: chsh -s $zsh_path"
         fi
     else
         log "zsh is already the default shell"
@@ -531,13 +562,14 @@ setup_paths_linux() {
 
     # Path block to inject
     local block
-    block=$(cat << 'PATHBLOCK'
+    block=$(cat << PATHBLOCK
 # >>> dotfiles-paths >>>
-export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
-export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
-if [ -d "$HOME/.pyenv" ]; then
-    export PYENV_ROOT="$HOME/.pyenv"
-    export PATH="$PYENV_ROOT/bin:$PATH"
+export DOTFILES="$DOTFILES"
+export PATH="\$HOME/.local/bin:\$HOME/.npm-global/bin:\$PATH"
+export PATH="/usr/local/go/bin:\$HOME/go/bin:\$PATH"
+if [ -d "\$HOME/.pyenv" ]; then
+    export PYENV_ROOT="\$HOME/.pyenv"
+    export PATH="\$PYENV_ROOT/bin:\$PATH"
 fi
 # <<< dotfiles-paths <<<
 PATHBLOCK
@@ -576,8 +608,10 @@ install_bat_theme() {
         return
     fi
 
+    local bat_theme_tag
+    bat_theme_tag=$(github_latest "catppuccin/bat")
     curl -Lo "$theme_dir/Catppuccin Mocha.tmTheme" \
-        "https://github.com/catppuccin/bat/releases/download/v0.2.3/Catppuccin%20Mocha.tmTheme"
+        "https://github.com/catppuccin/bat/releases/download/${bat_theme_tag}/Catppuccin%20Mocha.tmTheme"
     "$bat_cmd" cache --build >/dev/null
     log "bat theme installed"
 }
@@ -588,6 +622,13 @@ deploy_configs() {
 
     symlink "$DOTFILES/configs/zsh/zshrc"       "$HOME/.zshrc"
     symlink "$DOTFILES/configs/git/gitconfig"   "$HOME/.gitconfig"
+
+    # Bootstrap local git identity on first install — never overwrite if it exists.
+    if [[ ! -f "$HOME/.gitconfig.local" ]]; then
+        cp "$DOTFILES/configs/git/gitconfig.local.example" "$HOME/.gitconfig.local"
+        warn "Git identity not configured — edit ~/.gitconfig.local with your name + email"
+    fi
+
     symlink "$DOTFILES/configs/tmux/tmux.conf"  "$HOME/.config/tmux/tmux.conf"
 
     backup_existing "$HOME/.config/nvim"
@@ -653,8 +694,12 @@ install_vscode_extensions() {
     fi
 
     # Detect code-oss / VSCodium — they can't access Microsoft's marketplace.
+    # realpath/readlink -f resolves symlink chains; fall back to the raw path on
+    # older macOS where neither is available (code won't be a multi-hop symlink).
     local code_bin
-    code_bin=$(readlink -f "$(command -v code)")
+    code_bin=$(realpath "$(command -v code)" 2>/dev/null \
+        || readlink -f "$(command -v code)" 2>/dev/null \
+        || command -v code)
     local product_json
     product_json=$(dirname "$code_bin")/../resources/app/product.json
     if [[ -f "$product_json" ]] && ! grep -q "marketplace.visualstudio.com" "$product_json"; then
@@ -785,6 +830,48 @@ install_vscode_extensions() {
     log "VS Code settings deployed"
 }
 
+# ── Update everything ─────────────────────────────────────────────────────────
+update_dotfiles() {
+    section "Updating dotfiles"
+
+    log "Pulling latest changes…"
+    if git -C "$DOTFILES" pull --ff-only 2>/dev/null; then
+        log "Repo up to date"
+    else
+        warn "git pull failed — resolve conflicts manually, then re-run"
+    fi
+
+    deploy_configs
+    deploy_claude_configs
+
+    if [[ "$OS" == "macos" ]] && command -v brew &>/dev/null; then
+        log "Upgrading Homebrew packages…"
+        brew upgrade --quiet 2>/dev/null || true
+    fi
+
+    if command -v nvim &>/dev/null; then
+        log "Updating Neovim plugins…"
+        nvim --headless "+Lazy! update" +qa 2>/dev/null || true
+    fi
+
+    if [[ -f "$HOME/.tmux/plugins/tpm/bin/update_plugins" ]]; then
+        log "Updating tmux plugins…"
+        "$HOME/.tmux/plugins/tpm/bin/update_plugins" all >/dev/null 2>&1 || true
+    fi
+
+    log "Done — restart your shell to pick up any config changes"
+}
+
+# ── Health check (delegates to test.sh) ───────────────────────────────────────
+run_doctor() {
+    section "Dotfiles health check"
+    if [[ -x "$DOTFILES/test.sh" ]]; then
+        "$DOTFILES/test.sh"
+    else
+        err "test.sh not found at $DOTFILES/test.sh"
+    fi
+}
+
 # ── Final notes ───────────────────────────────────────────────────────────────
 print_summary() {
     section "Done!"
@@ -806,7 +893,7 @@ print_summary() {
     echo "  4. In Neovim, run :Mason to install LSP servers (pyright, gopls, etc.)"
     echo "  5. Log in to Claude:  claude  (runs auth on first launch)"
     echo ""
-    echo -e "  ${BLUE}Git config:${NC}  review ~/.gitconfig — update name/email if needed"
+    echo -e "  ${BLUE}Git identity:${NC}  edit ~/.gitconfig.local — set your name + email"
     echo ""
 }
 
@@ -849,17 +936,15 @@ main() {
         setup_paths_linux
     fi
 
+    # ── pyenv (runs before zsh; also works as a standalone component) ─────────
+    if want pyenv || want zsh; then install_pyenv; fi
+
     # ── Zsh stack ─────────────────────────────────────────────────────────────
     if want zsh; then
-        install_pyenv
         install_ohmyzsh
         [[ "$OS" == "linux" ]] && install_zsh_plugins_custom
         set_zsh_default
     fi
-
-    # ── pyenv standalone ──────────────────────────────────────────────────────
-    # (also run as part of 'zsh'; this allows './install.sh pyenv' on its own)
-    want pyenv && ! want zsh && install_pyenv
 
     # ── bat theme ─────────────────────────────────────────────────────────────
     want bat && install_bat_theme
@@ -878,6 +963,12 @@ main() {
 
     # ── VS Code ───────────────────────────────────────────────────────────────
     want vscode && install_vscode_extensions
+
+    # ── Update ────────────────────────────────────────────────────────────────
+    want update && update_dotfiles
+
+    # ── Doctor / health check ─────────────────────────────────────────────────
+    want doctor && run_doctor
 
     print_summary
 }

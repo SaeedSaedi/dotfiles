@@ -10,7 +10,7 @@
 #    ./test.sh symlinks     # only config symlink checks
 #    ./test.sh vscode       # only VS Code extension checks
 # ─────────────────────────────────────────────────────────────────────────────
-set -uo pipefail
+set -euo pipefail
 
 # ── Colours ───────────────────────────────────────────────────────────────────
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'
@@ -288,6 +288,19 @@ if want configs; then
         fi
     else
         skip "pyenv  →  not installed"
+    fi
+
+    # git identity: ~/.gitconfig.local must exist and have real values
+    if [[ -f "$HOME/.gitconfig.local" ]]; then
+        git_name=$(git config -f "$HOME/.gitconfig.local" user.name 2>/dev/null || true)
+        git_email=$(git config -f "$HOME/.gitconfig.local" user.email 2>/dev/null || true)
+        if [[ -n "$git_name" && "$git_name" != "Your Name" ]]; then
+            pass "git identity  →  $git_name <$git_email>"
+        else
+            fail "git identity  →  not configured (edit ~/.gitconfig.local)"
+        fi
+    else
+        fail "~/.gitconfig.local  →  not found (run: ./install.sh configs)"
     fi
 fi
 

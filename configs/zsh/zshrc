@@ -2,6 +2,16 @@
 #  .zshrc — cross-platform (macOS + Linux)
 # ════════════════════════════════════════════════════════════════════════════
 
+# ── Resolve dotfiles repo location ───────────────────────────────────────────
+# ~/.zshrc is a symlink into the repo; walk back up to find the root.
+# Falls back gracefully if not installed via symlink (e.g. sourced directly).
+if [[ -z "${DOTFILES:-}" && -L "$HOME/.zshrc" ]]; then
+    _zshrc_src="$(readlink "$HOME/.zshrc")"              # .../dotfiles/configs/zsh/zshrc
+    DOTFILES="$(cd "$(dirname "$_zshrc_src")/../.." && pwd)"
+    export DOTFILES
+    unset _zshrc_src
+fi
+
 # ── OS detection & Homebrew ──────────────────────────────────────────────────
 if [[ "$OSTYPE" == "darwin"* ]]; then
     IS_MACOS=true
@@ -190,38 +200,30 @@ if command -v direnv &>/dev/null; then
     eval "$(direnv hook zsh)"
 fi
 
-# ── Proxy helpers (edit PROXY_HTTP/SOCKS to match your setup) ────────────────
-PROXY_HTTP="http://127.0.0.1:8118"
-PROXY_SOCKS="socks5://127.0.0.1:1080"
-
-enable_proxy() {
-    export HTTP_PROXY=$PROXY_HTTP HTTPS_PROXY=$PROXY_HTTP
-    export http_proxy=$PROXY_HTTP https_proxy=$PROXY_HTTP
-    export ALL_PROXY=$PROXY_SOCKS all_proxy=$PROXY_SOCKS
-    export NO_PROXY="localhost,127.0.0.1,::1" no_proxy="localhost,127.0.0.1,::1"
-    git config --global http.proxy $PROXY_HTTP
-    git config --global https.proxy $PROXY_HTTP
-    command -v npm  &>/dev/null && npm  config set proxy $PROXY_HTTP && npm  config set https-proxy $PROXY_HTTP
-    command -v yarn &>/dev/null && yarn config set proxy $PROXY_HTTP && yarn config set https-proxy $PROXY_HTTP
-    command -v pip  &>/dev/null && pip  config set global.proxy $PROXY_HTTP 2>/dev/null
-    echo "Proxy enabled ($PROXY_HTTP)"
-}
-
-disable_proxy() {
-    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy NO_PROXY no_proxy
-    git config --global --unset http.proxy  2>/dev/null || true
-    git config --global --unset https.proxy 2>/dev/null || true
-    command -v npm  &>/dev/null && npm  config delete proxy && npm  config delete https-proxy
-    command -v yarn &>/dev/null && yarn config delete proxy && yarn config delete https-proxy
-    command -v pip  &>/dev/null && pip  config unset global.proxy 2>/dev/null || true
-    echo "Proxy disabled"
-}
-
 # ── macOS-only extras ────────────────────────────────────────────────────────
 if $IS_MACOS; then
     alias genpass='pwgen -n -c -C -B 16 8'
-    alias codep='code --proxy-server="http://127.0.0.1:8118"'
 fi
 
-# ── JetBrains VM options (macOS — optional) ──────────────────────────────────
-[[ -f "$HOME/.jetbrains.vmoptions.sh" ]] && source "$HOME/.jetbrains.vmoptions.sh"
+# ── dotfiles management ──────────────────────────────────────────────────────
+dotfiles() {
+    local df="${DOTFILES:-$HOME/dotfiles}"
+    case "${1:-}" in
+        update)  "$df/install.sh" update ;;
+        check)   "$df/test.sh" ;;
+        edit)    ${EDITOR:-nvim} "$df" ;;
+        cd)      cd "$df" ;;
+        *)
+            echo "Usage: dotfiles <command>"
+            echo "  update   pull latest + sync plugins + re-link configs"
+            echo "  check    run health checks"
+            echo "  edit     open repo in \$EDITOR"
+            echo "  cd       cd into repo"
+            ;;
+    esac
+}
+
+# ── Local overrides (machine-specific config, never committed) ────────────────
+# Copy configs/zsh/zshrc.local.example → ~/.zshrc.local to add proxy helpers,
+# machine-specific aliases, JetBrains hooks, etc.
+[[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
