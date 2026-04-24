@@ -398,9 +398,13 @@ install_kitty_linux() {
     mkdir -p "$HOME/.local/share/applications"
     cp "$HOME/.local/kitty.app/share/applications/kitty.desktop" \
         "$HOME/.local/share/applications/" 2>/dev/null || true
+    # Use absolute paths so GNOME can launch kitty without a user PATH (TryExec= is validated at login)
     sed -i \
-        "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g" \
+        "s|Icon=kitty|Icon=$HOME/.local/kitty.app/share/icons/hicolor/256x256/apps/kitty.png|g; \
+         s|^TryExec=kitty$|TryExec=$HOME/.local/bin/kitty|g; \
+         s|^Exec=kitty$|Exec=$HOME/.local/bin/kitty|g" \
         "$HOME/.local/share/applications/kitty.desktop" 2>/dev/null || true
+    update-desktop-database "$HOME/.local/share/applications/" 2>/dev/null || true
     log "Kitty installed"
     _set_kitty_default_linux
 }
@@ -433,6 +437,16 @@ _set_kitty_default_linux() {
     if [[ -f "$HOME/.local/share/applications/kitty.desktop" ]]; then
         xdg-mime default kitty.desktop x-scheme-handler/terminal 2>/dev/null || true
     fi
+
+    # xdg-terminal-exec: Ubuntu 24.04+ uses this for Ctrl+Alt+T and GNOME shortcuts.
+    # On ubuntu:GNOME desktop the script checks ubuntu-xdg-terminals.list first, so we
+    # write both the desktop-specific and generic names to cover all configurations.
+    # We also clear the cache so the next launch picks up the new preference immediately.
+    mkdir -p "$HOME/.config"
+    printf 'kitty.desktop\n' > "$HOME/.config/ubuntu-xdg-terminals.list"
+    printf 'kitty.desktop\n' > "$HOME/.config/xdg-terminals.list"
+    rm -f "$HOME/.cache/xdg-terminal-exec"
+    log "Kitty set as default terminal (xdg-terminal-exec)"
 }
 
 # ── Nerd Font (Linux) ─────────────────────────────────────────────────────────
@@ -603,15 +617,17 @@ install_bat_theme() {
     theme_dir="$("$bat_cmd" --config-dir 2>/dev/null)/themes"
     mkdir -p "$theme_dir"
 
-    if [[ -f "$theme_dir/Catppuccin Mocha.tmTheme" ]]; then
+    # Re-download if file is missing or suspiciously small (corrupt/404 body)
+    local theme_file="$theme_dir/Catppuccin Mocha.tmTheme"
+    if [[ -f "$theme_file" ]] && [[ $(wc -c < "$theme_file") -gt 1000 ]]; then
         log "bat Catppuccin Mocha theme already installed"
         return
     fi
 
-    local bat_theme_tag
-    bat_theme_tag=$(github_latest "catppuccin/bat")
-    curl -Lo "$theme_dir/Catppuccin Mocha.tmTheme" \
-        "https://github.com/catppuccin/bat/releases/download/${bat_theme_tag}/Catppuccin%20Mocha.tmTheme"
+    # catppuccin/bat dropped releases; theme lives on the main branch
+    curl -fsSL \
+        "https://raw.githubusercontent.com/catppuccin/bat/main/themes/Catppuccin%20Mocha.tmTheme" \
+        -o "$theme_file"
     "$bat_cmd" cache --build >/dev/null
     log "bat theme installed"
 }

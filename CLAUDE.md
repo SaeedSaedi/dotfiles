@@ -9,6 +9,15 @@ A cross-platform (macOS + Ubuntu/Debian) dotfiles installer that sets up a compl
 ## Key Commands
 
 ```bash
+# Full GNOME desktop setup (Ubuntu only — theme, icons, cursors, extensions, fonts, dconf)
+./setup-gnome.sh
+
+# Specific GNOME components only (safe to re-run)
+./setup-gnome.sh theme icons cursor extensions fonts dconf
+
+# Force re-download extensions (useful after GNOME upgrade)
+./setup-gnome.sh extensions --force-extensions
+
 # Full install
 ./install.sh
 
