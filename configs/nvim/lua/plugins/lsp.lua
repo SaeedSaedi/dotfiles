@@ -1,7 +1,7 @@
 return {
   -- LSP server installer
   {
-    "williamboman/mason.nvim",
+    "mason-org/mason.nvim",
     cmd   = "Mason",
     build = ":MasonUpdate",
     config = function()
@@ -20,9 +20,9 @@ return {
 
   -- Bridge mason <-> lspconfig
   {
-    "williamboman/mason-lspconfig.nvim",
+    "mason-org/mason-lspconfig.nvim",
     event        = { "BufReadPre", "BufNewFile" },
-    dependencies = { "williamboman/mason.nvim" },
+    dependencies = { "mason-org/mason.nvim" },
     config = function()
       require("mason-lspconfig").setup({
         ensure_installed = {
@@ -31,7 +31,6 @@ return {
           "intelephense", -- PHP
           "lua_ls",       -- Lua (for editing this config)
         },
-        automatic_installation = true,
       })
     end,
   },
@@ -41,29 +40,30 @@ return {
     "neovim/nvim-lspconfig",
     event        = { "BufReadPre", "BufNewFile" },
     dependencies = {
-      "williamboman/mason.nvim",
-      "williamboman/mason-lspconfig.nvim",
+      "mason-org/mason.nvim",
+      "mason-org/mason-lspconfig.nvim",
       "hrsh7th/cmp-nvim-lsp",
     },
     config = function()
-      local lspconfig    = require("lspconfig")
       local capabilities = require("cmp_nvim_lsp").default_capabilities()
 
-      local on_attach = function(_, bufnr)
-        local b = { noremap = true, silent = true, buffer = bufnr }
-        vim.keymap.set("n", "K",          vim.lsp.buf.hover,           b)
-        vim.keymap.set("n", "gd",         vim.lsp.buf.definition,      b)
-        vim.keymap.set("n", "gD",         vim.lsp.buf.declaration,     b)
-        vim.keymap.set("n", "gr",         vim.lsp.buf.references,      b)
-        vim.keymap.set("n", "gi",         vim.lsp.buf.implementation,  b)
-        vim.keymap.set("n", "gy",         vim.lsp.buf.type_definition, b)
-        vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename,          b)
-        vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action,     b)
-        vim.keymap.set("n", "<leader>lf", function()
-          vim.lsp.buf.format({ async = true })
-        end, b)
-        vim.keymap.set("n", "<leader>ls", vim.lsp.buf.signature_help, b)
-      end
+      vim.api.nvim_create_autocmd("LspAttach", {
+        callback = function(args)
+          local b = { noremap = true, silent = true, buffer = args.buf }
+          vim.keymap.set("n", "K",          vim.lsp.buf.hover,           b)
+          vim.keymap.set("n", "gd",         vim.lsp.buf.definition,      b)
+          vim.keymap.set("n", "gD",         vim.lsp.buf.declaration,     b)
+          vim.keymap.set("n", "gr",         vim.lsp.buf.references,      b)
+          vim.keymap.set("n", "gi",         vim.lsp.buf.implementation,  b)
+          vim.keymap.set("n", "gy",         vim.lsp.buf.type_definition, b)
+          vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename,          b)
+          vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action,     b)
+          vim.keymap.set("n", "<leader>lf", function()
+            vim.lsp.buf.format({ async = true })
+          end, b)
+          vim.keymap.set("n", "<leader>ls", vim.lsp.buf.signature_help, b)
+        end,
+      })
 
       -- Diagnostic appearance
       vim.diagnostic.config({
@@ -82,9 +82,8 @@ return {
       end
 
       -- Python
-      lspconfig.pyright.setup({
+      vim.lsp.config("pyright", {
         capabilities = capabilities,
-        on_attach    = on_attach,
         settings = {
           python = {
             analysis = {
@@ -98,9 +97,8 @@ return {
       })
 
       -- Go
-      lspconfig.gopls.setup({
+      vim.lsp.config("gopls", {
         capabilities = capabilities,
-        on_attach    = on_attach,
         settings = {
           gopls = {
             analyses           = { unusedparams = true, shadow = true },
@@ -112,9 +110,8 @@ return {
       })
 
       -- PHP
-      lspconfig.intelephense.setup({
+      vim.lsp.config("intelephense", {
         capabilities = capabilities,
-        on_attach    = on_attach,
         settings = {
           intelephense = {
             files = { maxSize = 5000000 },
@@ -123,9 +120,8 @@ return {
       })
 
       -- Lua (for editing nvim config)
-      lspconfig.lua_ls.setup({
+      vim.lsp.config("lua_ls", {
         capabilities = capabilities,
-        on_attach    = on_attach,
         settings = {
           Lua = {
             diagnostics = { globals = { "vim" } },
@@ -134,6 +130,8 @@ return {
           },
         },
       })
+
+      vim.lsp.enable({ "pyright", "gopls", "intelephense", "lua_ls" })
     end,
   },
 
