@@ -1,5 +1,9 @@
 # Dotfiles — Dev Environment Setup
 
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Ubuntu-blue)](#quick-start)
+[![Shell](https://img.shields.io/badge/shell-bash%20%7C%20zsh-89e051)](install.sh)
+[![License](https://img.shields.io/github/license/SaeedSaedi/dotfiles)](LICENSE)
+
 Full environment setup for macOS (Apple Silicon / Intel) and Ubuntu/Debian Linux.
 One command installs everything and wires up all configs via symlinks.
 
